@@ -7,31 +7,34 @@
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
-  <!-- Recharts dependencies first -->
   <script src="https://unpkg.com/prop-types@15.8.1/prop-types.min.js"></script>
   <script src="https://unpkg.com/recharts@2.1.16/umd/Recharts.js"></script>
-  <style>
-    html,body{margin:0;padding:0;background:#0F0F13;min-height:100vh}
-    #root{min-height:100vh}
-  </style>
+  <style>html,body{margin:0;padding:0;background:#0F0F13;min-height:100vh}#root{min-height:100vh}</style>
 </head>
 <body>
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
-
 const { useState, useEffect, useMemo, useRef, useCallback } = React;
-
-// Wait for Recharts to be available
-const {
-  PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
-  Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid
-} = window.Recharts || {};
+const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } = window.Recharts || {};
 
 const CLIENT_ID  = "198840607286-npt8da6voqh9bf5hqfvd2dnuespr9nph.apps.googleusercontent.com";
 const SHEET_ID   = "1L6Zl5PMZTKxWXNJoOmdc2vl_oY6e4Ur8EsNCN2SnQrk";
 const SHEET_NAME = "Expenses";
 const SCOPES     = "https://www.googleapis.com/auth/spreadsheets";
 const DISCOVERY  = "https://sheets.googleapis.com/$discovery/rest?version=v4";
+
+// Columns: Date | Category | Subcategory | Amount (my share) | Note | Reconciled | Payment | CC Amount (full bill)
+const r2e = (row, i) => ({
+  id: i+2, date: row[0]||"", category: row[1]||"Other",
+  subcategory: row[2]||"Miscellaneous", amount: parseFloat(row[3])||0,
+  note: row[4]||"", reconciled: row[5]==="TRUE",
+  payment: row[6]||"CC",
+  ccAmount: parseFloat(row[7]) || parseFloat(row[3]) || 0
+});
+const e2r = e => [
+  e.date, e.category, e.subcategory, e.amount, e.note,
+  e.reconciled?"TRUE":"FALSE", e.payment||"CC", e.ccAmount||e.amount
+];
 
 const CATEGORIES = {
   "Food":      { icon:"🍽️", color:"#E8845A", sub:["Groceries","Eating Out","Food Delivery"] },
@@ -55,37 +58,29 @@ function monthRange() {
     end:   new Date(n.getFullYear(),n.getMonth()+1,0).toISOString().split("T")[0]
   };
 }
-const r2e = (row,i) => ({
-  id:i+2, date:row[0]||"", category:row[1]||"Other",
-  subcategory:row[2]||"Miscellaneous", amount:parseFloat(row[3])||0,
-  note:row[4]||"", reconciled:row[5]==="TRUE"
-});
-const e2r = e => [e.date,e.category,e.subcategory,e.amount,e.note,e.reconciled?"TRUE":"FALSE"];
 
 const CSS = `
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap');
-*{box-sizing:border-box;margin:0;padding:0}
-body{overscroll-behavior:none}
+*{box-sizing:border-box;margin:0;padding:0}body{overscroll-behavior:none}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#1A1A22}::-webkit-scrollbar-thumb{background:#333;border-radius:4px}
 input,button{font-family:inherit}
 .tab{background:none;border:none;color:#888;font-size:13px;font-weight:500;cursor:pointer;padding:8px 14px;border-radius:20px;transition:all .2s}
 .tab.on{background:#1E1E28;color:#F0EDE6}
 .nav{background:none;border:none;color:#666;font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;padding:8px 0;display:flex;flex-direction:column;align-items:center;gap:3px;transition:color .2s;min-width:52px}
-.nav.on{color:#E8845A}
-.nav .ic{font-size:18px}
+.nav.on{color:#E8845A}.nav .ic{font-size:18px}
 .chip{border:1.5px solid #2A2A35;background:#16161E;border-radius:10px;padding:10px 12px;cursor:pointer;transition:all .18s;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:#F0EDE6}
 .chip.on{border-color:var(--ac);background:color-mix(in srgb,var(--ac) 12%,#16161E);color:var(--ac)}
 .sc{border:1.5px solid #2A2A35;background:none;border-radius:20px;padding:6px 14px;cursor:pointer;transition:all .18s;font-size:12px;font-weight:500;color:#888}
 .sc.on{border-color:var(--ac);color:var(--ac);background:color-mix(in srgb,var(--ac) 10%,transparent)}
 .ai{background:#1A1A24;border:2px solid #2A2A38;border-radius:14px;color:#F0EDE6;font-size:32px;font-family:'Syne',sans-serif;font-weight:700;width:100%;padding:18px 20px 18px 48px;outline:none;transition:border-color .2s}
-.ai:focus{border-color:#E8845A}
-.ai::placeholder{color:#333}
+.ai:focus{border-color:#E8845A}.ai::placeholder{color:#333}
 .ti{background:#1A1A24;border:1.5px solid #2A2A38;border-radius:10px;color:#F0EDE6;font-size:14px;width:100%;padding:12px 16px;outline:none}
 .ti::placeholder{color:#444}
+.ni{background:#1A1A24;border:1.5px solid #2A2A38;border-radius:10px;color:#F0EDE6;font-size:16px;width:100%;padding:10px 14px;outline:none;text-align:center}
+.ni::placeholder{color:#444}
 .di{background:#1A1A24;border:1.5px solid #2A2A38;border-radius:10px;color:#F0EDE6;font-size:14px;padding:10px 14px;outline:none;width:100%;color-scheme:dark}
 .sb{width:100%;background:#E8845A;color:#0F0F13;border:none;border-radius:14px;font-size:16px;font-weight:700;font-family:'Syne',sans-serif;padding:18px;cursor:pointer;transition:all .2s}
-.sb:hover{background:#f09070;transform:translateY(-1px)}
-.sb.ok{background:#5AE8A0}
+.sb:hover{background:#f09070;transform:translateY(-1px)}.sb.ok{background:#5AE8A0}
 .card{background:#16161E;border:1px solid #1E1E2A;border-radius:16px;padding:18px}
 .er{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #1A1A24}
 .er:last-child{border-bottom:none}
@@ -97,6 +92,14 @@ input,button{font-family:inherit}
 .sp{width:18px;height:18px;border:2px solid #2A2A35;border-top-color:#E8845A;border-radius:50%;animation:sp .8s linear infinite;display:inline-block;vertical-align:middle}
 @keyframes sp{to{transform:rotate(360deg)}}
 .lbl{font-size:11px;color:#666;letter-spacing:1px;text-transform:uppercase;margin-bottom:8px}
+.toggle-row{display:flex;align-items:center;justify-content:space-between;background:#1A1A24;border:1.5px solid #2A2A38;border-radius:12px;padding:12px 16px}
+.toggle{width:44px;height:24px;border-radius:12px;border:none;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
+.toggle::after{content:'';position:absolute;width:18px;height:18px;border-radius:50%;background:white;top:3px;left:3px;transition:left .2s}
+.toggle.on{background:#E8845A}.toggle.on::after{left:23px}
+.toggle.off{background:#2A2A38}
+.pay-btn{flex:1;padding:10px;border:1.5px solid #2A2A35;background:none;border-radius:10px;color:#888;font-size:13px;font-weight:500;cursor:pointer;transition:all .18s;text-align:center}
+.pay-btn.on{border-color:var(--ac);color:var(--ac);background:color-mix(in srgb,var(--ac) 10%,transparent)}
+.badge{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;letter-spacing:.5px}
 `;
 
 function App() {
@@ -117,55 +120,55 @@ function App() {
   const [tab,   setTab]   = useState("overview");
   const [srch,  setSrch]  = useState("");
 
-  const [cat,   setCat]   = useState("Food");
-  const [sub,   setSub]   = useState("Groceries");
-  const [amt,   setAmt]   = useState("");
-  const [nte,   setNte]   = useState("");
-  const [dt,    setDt]    = useState(getNow());
-  const [saved, setSaved] = useState(false);
+  // Add form state
+  const [cat,     setCat]     = useState("Food");
+  const [sub,     setSub]     = useState("Groceries");
+  const [amt,     setAmt]     = useState("");
+  const [nte,     setNte]     = useState("");
+  const [dt,      setDt]      = useState(getNow());
+  const [saved,   setSaved]   = useState(false);
+  const [payment, setPayment] = useState("CC");       // "CC" | "Cash"
+  const [isSplit, setIsSplit] = useState(false);
+  const [splitN,  setSplitN]  = useState(2);
 
   useEffect(()=>{ setSub(CATEGORIES[cat].sub[0]); },[cat]);
 
-  // Load GAPI
+  // Computed split values
+  const fullAmt  = parseFloat(amt) || 0;
+  const myAmt    = isSplit && splitN > 1 ? Math.round((fullAmt / splitN) * 100) / 100 : fullAmt;
+  const ccAmt    = payment === "CC" ? fullAmt : 0; // CC amount is always the full bill amount
+
+  // Load scripts
   useEffect(()=>{
     function loadGapi() {
       if (window.gapi) {
         window.gapi.load("client", async ()=>{
-          try {
-            await window.gapi.client.init({ discoveryDocs:[DISCOVERY] });
-            setGapiOk(true);
-          } catch(e) { console.error("gapi init error",e); setAuth("error"); setAuthErr("Google API failed to init: "+e.message); }
+          try { await window.gapi.client.init({discoveryDocs:[DISCOVERY]}); setGapiOk(true); }
+          catch(e) { setAuth("error"); setAuthErr("Google API init failed: "+e.message); }
         });
       } else {
-        const s=document.createElement("script");
-        s.src="https://apis.google.com/js/api.js";
-        s.onload=loadGapi;
-        s.onerror=()=>{ setAuth("error"); setAuthErr("Failed to load Google API script."); };
+        const s=document.createElement("script"); s.src="https://apis.google.com/js/api.js";
+        s.onload=loadGapi; s.onerror=()=>{ setAuth("error"); setAuthErr("Failed to load Google API."); };
         document.head.appendChild(s);
       }
     }
-    loadGapi();
-
     function loadGis() {
       if (window.google?.accounts?.oauth2) {
         tokenRef.current = window.google.accounts.oauth2.initTokenClient({
           client_id:CLIENT_ID, scope:SCOPES,
           callback: async resp => {
             if (resp.error) { setAuthErr(resp.error); setAuth("error"); return; }
-            setAuth("ready");
-            await doLoad();
+            setAuth("ready"); await doLoad();
           }
         });
         setGisOk(true);
       } else {
-        const s=document.createElement("script");
-        s.src="https://accounts.google.com/gsi/client";
-        s.onload=loadGis;
-        s.onerror=()=>{ setAuth("error"); setAuthErr("Failed to load Google Sign-In script."); };
+        const s=document.createElement("script"); s.src="https://accounts.google.com/gsi/client";
+        s.onload=loadGis; s.onerror=()=>{ setAuth("error"); setAuthErr("Failed to load Google Sign-In."); };
         document.head.appendChild(s);
       }
     }
-    loadGis();
+    loadGapi(); loadGis();
   },[]);
 
   useEffect(()=>{
@@ -179,11 +182,11 @@ function App() {
   const flash = msg => { setSyncMsg(msg); setTimeout(()=>setSyncMsg(""),3500); };
 
   const ensureHeader = async () => {
-    const r = await gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${SHEET_NAME}!A1:F1`});
+    const r = await gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${SHEET_NAME}!A1:H1`});
     if (!r.result.values || r.result.values[0]?.[0]!=="Date") {
       await gapi.client.sheets.spreadsheets.values.update({
-        spreadsheetId:SHEET_ID, range:`${SHEET_NAME}!A1:F1`, valueInputOption:"RAW",
-        resource:{values:[["Date","Category","Subcategory","Amount","Note","Reconciled"]]}
+        spreadsheetId:SHEET_ID, range:`${SHEET_NAME}!A1:H1`, valueInputOption:"RAW",
+        resource:{values:[["Date","Category","Subcategory","Amount","Note","Reconciled","Payment","CC Amount"]]}
       });
     }
   };
@@ -192,11 +195,10 @@ function App() {
     setSyncing(true);
     try {
       await ensureHeader();
-      const r = await gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${SHEET_NAME}!A2:F`});
+      const r = await gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${SHEET_NAME}!A2:H`});
       const rows = r.result.values||[];
       setExpenses(rows.map(r2e).filter(e=>e.amount>0).sort((a,b)=>b.date.localeCompare(a.date)));
-      setDataLoaded(true);
-      flash("✓ Synced");
+      setDataLoaded(true); flash("✓ Synced");
     } catch(e) { flash("⚠ "+(e.result?.error?.message||e.message||"Load error")); }
     finally { setSyncing(false); }
   },[]);
@@ -208,23 +210,30 @@ function App() {
   };
 
   const handleSave = async () => {
-    if (!amt||isNaN(amt)||Number(amt)<=0) return;
-    const e={id:Date.now(),date:dt,category:cat,subcategory:sub,amount:Number(amt),note:nte.trim(),reconciled:false};
-    setExpenses(p=>[e,...p].sort((a,b)=>b.date.localeCompare(a.date)));
-    setAmt(""); setNte(""); setDt(getNow());
+    if (!amt||isNaN(amt)||fullAmt<=0) return;
+    const entry = {
+      id: Date.now(), date:dt, category:cat, subcategory:sub,
+      amount: myAmt,          // my share
+      note: nte.trim(),
+      reconciled: false,
+      payment,
+      ccAmount: ccAmt         // full CC bill amount (same as fullAmt if CC, 0 if Cash)
+    };
+    setExpenses(p=>[entry,...p].sort((a,b)=>b.date.localeCompare(a.date)));
+    setAmt(""); setNte(""); setDt(getNow()); setIsSplit(false); setSplitN(2);
     setSaved(true); setTimeout(()=>setSaved(false),1200);
     try {
       await gapi.client.sheets.spreadsheets.values.append({
-        spreadsheetId:SHEET_ID, range:`${SHEET_NAME}!A:F`,
+        spreadsheetId:SHEET_ID, range:`${SHEET_NAME}!A:H`,
         valueInputOption:"RAW", insertDataOption:"INSERT_ROWS",
-        resource:{values:[e2r(e)]}
+        resource:{values:[e2r(entry)]}
       });
       flash("✓ Saved to Sheet");
     } catch { flash("⚠ Save failed"); }
   };
 
   const findRow = async e => {
-    const r=await gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${SHEET_NAME}!A:F`});
+    const r=await gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${SHEET_NAME}!A:H`});
     return (r.result.values||[]).findIndex(row=>row[0]===e.date&&row[1]===e.category&&row[2]===e.subcategory&&parseFloat(row[3])===e.amount&&row[4]===e.note);
   };
 
@@ -257,35 +266,41 @@ function App() {
     } catch { flash("⚠ Delete failed"); }
   };
 
+  // ── Derived ───────────────────────────────────────────────────────────────
   const filtered = useMemo(()=>{
     if(range==="month"){const{start,end}=monthRange();return expenses.filter(e=>e.date>=start&&e.date<=end);}
     if(range==="week"){const d=new Date();d.setDate(d.getDate()-6);return expenses.filter(e=>e.date>=d.toISOString().split("T")[0]);}
     return expenses;
   },[expenses,range]);
 
-  const total  = useMemo(()=>filtered.reduce((s,e)=>s+e.amount,0),[filtered]);
-  const byCat  = useMemo(()=>{
+  const total = useMemo(()=>filtered.reduce((s,e)=>s+e.amount,0),[filtered]);
+
+  const byCat = useMemo(()=>{
     const m={};
     for(const e of filtered) m[e.category]=(m[e.category]||0)+e.amount;
     return Object.entries(m).map(([n,v])=>({name:n,value:v,color:CATEGORIES[n]?.color||"#888"})).sort((a,b)=>b.value-a.value);
   },[filtered]);
-  const bySub  = useMemo(()=>{
+
+  const bySub = useMemo(()=>{
     const m={};
     for(const e of filtered){const k=`${e.category}|${e.subcategory}`;if(!m[k])m[k]={name:e.subcategory,category:e.category,value:0,color:CATEGORIES[e.category]?.color||"#888"};m[k].value+=e.amount;}
     return Object.values(m).sort((a,b)=>b.value-a.value).slice(0,10);
   },[filtered]);
-  const daily  = useMemo(()=>{
+
+  const daily = useMemo(()=>{
     const days=[];const now=new Date();
     for(let i=13;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i);const k=d.toISOString().split("T")[0];days.push({label:`${d.getDate()} ${MN[d.getMonth()]}`,date:k,value:0});}
     for(const e of expenses){const f=days.find(d=>d.date===e.date);if(f)f.value+=e.amount;}
     return days;
   },[expenses]);
-  const monthly= useMemo(()=>{
+
+  const monthly = useMemo(()=>{
     const m={};
     for(const e of expenses){const d=new Date(e.date);const k=`${MN[d.getMonth()]} ${d.getFullYear()}`;m[k]=(m[k]||0)+e.amount;}
     return Object.entries(m).slice(-12).map(([label,value])=>({label,value}));
   },[expenses]);
-  const hist   = useMemo(()=>{
+
+  const hist = useMemo(()=>{
     if(!srch) return expenses;
     const q=srch.toLowerCase();
     return expenses.filter(e=>e.note.toLowerCase().includes(q)||e.subcategory.toLowerCase().includes(q)||e.category.toLowerCase().includes(q));
@@ -294,30 +309,25 @@ function App() {
   const rl = range==="month"?(()=>{const n=new Date();return `${MN[n.getMonth()]} ${n.getFullYear()}`;})():range==="week"?"Last 7 days":"All time";
   const Tip = ({active,payload,label})=>active&&payload?.length?<div className="tt">{label&&<div style={{color:"#888",marginBottom:2}}>{label}</div>}{fmt(payload[0].value)}</div>:null;
 
-  // ── Loading screen ────────────────────────────────────────────────────────
+  // ── Loading ───────────────────────────────────────────────────────────────
   if (auth==="loading") return (
     <div style={{minHeight:"100vh",background:"#0F0F13",color:"#F0EDE6",fontFamily:"'DM Sans',sans-serif",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
       <style>{CSS}</style>
       <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:36}}>paisa<span style={{color:"#E8845A"}}>.</span></div>
       <div className="sp"/>
       <div style={{fontSize:13,color:"#555"}}>Connecting to Google…</div>
-      <button onClick={()=>setAuth("error")} style={{marginTop:24,background:"none",border:"1px solid #333",borderRadius:10,color:"#555",fontSize:12,padding:"8px 16px",cursor:"pointer"}}>
-        Sign in manually instead
-      </button>
+      <button onClick={()=>setAuth("error")} style={{marginTop:24,background:"none",border:"1px solid #333",borderRadius:10,color:"#555",fontSize:12,padding:"8px 16px",cursor:"pointer"}}>Sign in manually instead</button>
     </div>
   );
 
-  // ── Sign-in / Error screen ────────────────────────────────────────────────
-  if (auth==="error" || auth==="need-login") return (
+  if (auth==="error"||auth==="need-login") return (
     <div style={{minHeight:"100vh",background:"#0F0F13",color:"#F0EDE6",fontFamily:"'DM Sans',sans-serif",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:32,textAlign:"center",gap:12}}>
       <style>{CSS}</style>
       <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:36}}>paisa<span style={{color:"#E8845A"}}>.</span></div>
       <div style={{fontSize:14,color:"#aaa",marginTop:16}}>Sign in with Google to access your private finance data</div>
-      <div style={{fontSize:12,color:"#555"}}>Your data stays in your private Google Sheet — never shared</div>
-      {authErr && <div style={{fontSize:11,color:"#E85A5A",maxWidth:320,marginTop:4}}>{authErr}</div>}
-      <button onClick={signIn} style={{marginTop:20,background:"#E8845A",color:"#0F0F13",border:"none",borderRadius:14,fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif",padding:"14px 40px",cursor:"pointer"}}>
-        🔐 Sign in with Google
-      </button>
+      <div style={{fontSize:12,color:"#555"}}>Your data stays in your private Google Sheet</div>
+      {authErr&&<div style={{fontSize:11,color:"#E85A5A",maxWidth:320,marginTop:4}}>{authErr}</div>}
+      <button onClick={signIn} style={{marginTop:20,background:"#E8845A",color:"#0F0F13",border:"none",borderRadius:14,fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif",padding:"14px 40px",cursor:"pointer"}}>🔐 Sign in with Google</button>
     </div>
   );
 
@@ -326,7 +336,6 @@ function App() {
     <div style={{minHeight:"100vh",background:"#0F0F13",color:"#F0EDE6",fontFamily:"'DM Sans',sans-serif"}}>
       <style>{CSS}</style>
 
-      {/* Header */}
       <div style={{padding:"20px 20px 0",maxWidth:520,margin:"0 auto"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
           <div>
@@ -345,10 +354,9 @@ function App() {
         </div>
       </div>
 
-      {/* Page content */}
       <div style={{maxWidth:520,margin:"0 auto",padding:"16px 20px 110px"}}>
 
-        {/* DASHBOARD */}
+        {/* ── DASHBOARD ── */}
         {view==="dashboard"&&<>
           <div style={{marginBottom:20}}>
             <div className="lbl">{rl}</div>
@@ -357,9 +365,7 @@ function App() {
           </div>
           <div style={{display:"flex",gap:4,marginBottom:18,background:"#13131A",borderRadius:24,padding:4}}>
             {["overview","breakdown","trends"].map(t=>(
-              <button key={t} className={`tab ${tab===t?"on":""}`} style={{flex:1,textAlign:"center"}} onClick={()=>setTab(t)}>
-                {t[0].toUpperCase()+t.slice(1)}
-              </button>
+              <button key={t} className={`tab ${tab===t?"on":""}`} style={{flex:1,textAlign:"center"}} onClick={()=>setTab(t)}>{t[0].toUpperCase()+t.slice(1)}</button>
             ))}
           </div>
 
@@ -395,8 +401,14 @@ function App() {
                   <div key={e.id} className="er">
                     <div style={{width:34,height:34,borderRadius:10,background:`${CATEGORIES[e.category]?.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{CATEGORIES[e.category]?.icon}</div>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.subcategory}{e.note?` · ${e.note}`:""}</div>
-                      <div style={{fontSize:11,color:"#555",marginTop:2}}>{e.date}</div>
+                      <div style={{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                        {e.subcategory}{e.note?` · ${e.note}`:""}
+                        {e.ccAmount>e.amount&&<span style={{marginLeft:6,fontSize:10,color:"#9B5AE8",background:"rgba(155,90,232,.12)",padding:"1px 6px",borderRadius:8}}>split</span>}
+                      </div>
+                      <div style={{fontSize:11,color:"#555",marginTop:2,display:"flex",gap:8}}>
+                        <span>{e.date}</span>
+                        <span style={{color:e.payment==="CC"?"#5A9BE8":"#5AE8A0"}}>{e.payment==="CC"?"💳 CC":"💵 Cash"}</span>
+                      </div>
                     </div>
                     <div style={{fontSize:13,fontWeight:600,color:CATEGORIES[e.category]?.color}}>{fmt(e.amount)}</div>
                   </div>
@@ -462,16 +474,58 @@ function App() {
           </>}
         </>}
 
-        {/* ADD */}
+        {/* ── ADD ── */}
         {view==="add"&&<>
           <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:22,marginBottom:20}}>New Expense</div>
-          <div style={{marginBottom:20}}>
-            <div className="lbl">Amount</div>
+
+          {/* Amount */}
+          <div style={{marginBottom:16}}>
+            <div className="lbl">Amount{isSplit&&splitN>1?` (Full bill · your share: ${fmt(myAmt)})`:`${payment==="CC"?" · CC bill":""}`}</div>
             <div style={{position:"relative"}}>
               <span style={{position:"absolute",left:18,top:"50%",transform:"translateY(-50%)",fontSize:22,color:"#555",fontFamily:"'Syne',sans-serif",fontWeight:700}}>₹</span>
               <input className="ai" type="number" placeholder="0" value={amt} onChange={e=>setAmt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSave()} autoFocus/>
             </div>
+            {/* Live split preview */}
+            {isSplit&&fullAmt>0&&splitN>1&&(
+              <div style={{marginTop:10,background:"rgba(155,90,232,.08)",border:"1px solid rgba(155,90,232,.2)",borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                <span style={{fontSize:12,color:"#9B5AE8"}}>Full bill: {fmt(fullAmt)} ÷ {splitN} people</span>
+                <span style={{fontSize:14,fontWeight:700,color:"#9B5AE8"}}>Your share: {fmt(myAmt)}</span>
+              </div>
+            )}
           </div>
+
+          {/* Payment source */}
+          <div style={{marginBottom:16}}>
+            <div className="lbl">Payment Source</div>
+            <div style={{display:"flex",gap:8}}>
+              {[["CC","💳 Credit Card","#5A9BE8"],["Cash","💵 Cash / UPI","#5AE8A0"]].map(([val,label,col])=>(
+                <button key={val} className={`pay-btn ${payment===val?"on":""}`} style={{"--ac":col}} onClick={()=>setPayment(val)}>{label}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Split toggle */}
+          <div style={{marginBottom:16}}>
+            <div className="toggle-row">
+              <div>
+                <div style={{fontSize:13,fontWeight:500}}>Split Expense</div>
+                <div style={{fontSize:11,color:"#555",marginTop:2}}>Divide among multiple people</div>
+              </div>
+              <button className={`toggle ${isSplit?"on":"off"}`} onClick={()=>setIsSplit(p=>!p)}/>
+            </div>
+            {isSplit&&(
+              <div style={{marginTop:10,background:"#1A1A24",border:"1.5px solid #2A2A38",borderRadius:12,padding:"12px 16px"}}>
+                <div style={{fontSize:12,color:"#666",marginBottom:10,letterSpacing:"0.5px"}}>NUMBER OF PEOPLE (including you)</div>
+                <div style={{display:"flex",alignItems:"center",gap:12,justifyContent:"center"}}>
+                  <button onClick={()=>setSplitN(n=>Math.max(2,n-1))} style={{width:36,height:36,borderRadius:"50%",background:"#2A2A38",border:"none",color:"#F0EDE6",fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                  <input className="ni" style={{width:70}} type="number" min="2" max="20" value={splitN} onChange={e=>setSplitN(Math.max(2,parseInt(e.target.value)||2))}/>
+                  <button onClick={()=>setSplitN(n=>Math.min(20,n+1))} style={{width:36,height:36,borderRadius:"50%",background:"#2A2A38",border:"none",color:"#F0EDE6",fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Category */}
           <div style={{marginBottom:16}}>
             <div className="lbl">Category</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -482,6 +536,8 @@ function App() {
               ))}
             </div>
           </div>
+
+          {/* Subcategory */}
           <div style={{marginBottom:16}}>
             <div className="lbl">Subcategory</div>
             <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
@@ -490,14 +546,17 @@ function App() {
               ))}
             </div>
           </div>
+
+          {/* Note & Date */}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:24}}>
-            <div><div className="lbl">Note (optional)</div><input className="ti" placeholder="e.g. Zomato" value={nte} onChange={e=>setNte(e.target.value)}/></div>
+            <div><div className="lbl">Note (optional)</div><input className="ti" placeholder="e.g. Dinner with friends" value={nte} onChange={e=>setNte(e.target.value)}/></div>
             <div><div className="lbl">Date</div><input className="di" type="date" value={dt} onChange={e=>setDt(e.target.value)}/></div>
           </div>
+
           <button className={`sb ${saved?"ok":""}`} onClick={handleSave}>{saved?"✓ Saved!":"Save Expense"}</button>
         </>}
 
-        {/* HISTORY */}
+        {/* ── HISTORY ── */}
         {view==="history"&&<>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
             <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:22}}>History</div>
@@ -511,8 +570,14 @@ function App() {
                 <div key={e.id} className="er" style={{opacity:e.reconciled?.45:1}}>
                   <div style={{width:34,height:34,borderRadius:10,background:`${CATEGORIES[e.category]?.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{CATEGORIES[e.category]?.icon}</div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:500,textDecoration:e.reconciled?"line-through":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.subcategory}{e.note?` · ${e.note}`:""}</div>
-                    <div style={{fontSize:11,color:"#555",marginTop:2}}>{e.category} · {e.date}</div>
+                    <div style={{fontSize:13,fontWeight:500,textDecoration:e.reconciled?"line-through":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                      {e.subcategory}{e.note?` · ${e.note}`:""}
+                      {e.ccAmount>e.amount&&<span style={{marginLeft:6,fontSize:10,color:"#9B5AE8",background:"rgba(155,90,232,.12)",padding:"1px 6px",borderRadius:8}}>split</span>}
+                    </div>
+                    <div style={{fontSize:11,color:"#555",marginTop:2,display:"flex",gap:8}}>
+                      <span>{e.category} · {e.date}</span>
+                      <span style={{color:e.payment==="CC"?"#5A9BE8":"#5AE8A0"}}>{e.payment==="CC"?"💳":"💵"}</span>
+                    </div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
                     <div style={{fontSize:13,fontWeight:600,color:CATEGORIES[e.category]?.color}}>{fmt(e.amount)}</div>
@@ -525,37 +590,50 @@ function App() {
           }
         </>}
 
-        {/* RECONCILE */}
+        {/* ── RECONCILE ── */}
         {view==="reconcile"&&(()=>{
-          const unv=expenses.filter(e=>!e.reconciled);
-          const vd=expenses.filter(e=>e.reconciled);
+          // Only CC expenses need reconciliation
+          const ccExpenses = expenses.filter(e=>e.payment==="CC"||!e.payment);
+          const unv = ccExpenses.filter(e=>!e.reconciled);
+          const vd  = ccExpenses.filter(e=>e.reconciled);
+          // Use CC amount for totals (full bill amount, not split share)
+          const unvTotal = unv.reduce((s,e)=>s+(e.ccAmount||e.amount),0);
+          const vdTotal  = vd.reduce((s,e)=>s+(e.ccAmount||e.amount),0);
           return <>
             <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:22,marginBottom:6}}>CC Reconciliation</div>
-            <div style={{fontSize:13,color:"#555",marginBottom:18}}>Tap ✓ to mark entries verified against your credit card bill</div>
+            <div style={{fontSize:13,color:"#555",marginBottom:6}}>Only Credit Card entries shown · amounts are full CC bill values</div>
+            <div style={{fontSize:11,color:"#444",marginBottom:18}}>Split expenses show the full bill amount (e.g. ₹500) not your share (₹125)</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
               <div className="card" style={{textAlign:"center"}}>
                 <div style={{fontSize:11,color:"#E85A5A",letterSpacing:"1px",textTransform:"uppercase",marginBottom:6}}>Unverified</div>
-                <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:18}}>{fmt(unv.reduce((s,e)=>s+e.amount,0))}</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:18}}>{fmt(unvTotal)}</div>
                 <div style={{fontSize:11,color:"#555",marginTop:3}}>{unv.length} entries</div>
               </div>
               <div className="card" style={{textAlign:"center"}}>
                 <div style={{fontSize:11,color:"#5AE8A0",letterSpacing:"1px",textTransform:"uppercase",marginBottom:6}}>Verified</div>
-                <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:18}}>{fmt(vd.reduce((s,e)=>s+e.amount,0))}</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:18}}>{fmt(vdTotal)}</div>
                 <div style={{fontSize:11,color:"#555",marginTop:3}}>{vd.length} entries</div>
               </div>
             </div>
             <div className="card">
               <div className="lbl" style={{color:"#E85A5A",marginBottom:12}}>Needs Verification</div>
-              {unv.length===0&&<div style={{color:"#555",fontSize:13,textAlign:"center",padding:"16px 0"}}>🎉 All verified!</div>}
+              {unv.length===0&&<div style={{color:"#555",fontSize:13,textAlign:"center",padding:"16px 0"}}>🎉 All CC entries verified!</div>}
               {unv.slice(0,60).map(e=>(
                 <div key={e.id} className="er">
                   <div style={{width:34,height:34,borderRadius:10,background:`${CATEGORIES[e.category]?.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{CATEGORIES[e.category]?.icon}</div>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{e.subcategory}{e.note?` · ${e.note}`:""}</div>
+                    <div style={{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                      {e.subcategory}{e.note?` · ${e.note}`:""}
+                      {e.ccAmount>e.amount&&<span style={{marginLeft:6,fontSize:10,color:"#9B5AE8",background:"rgba(155,90,232,.12)",padding:"1px 6px",borderRadius:8}}>split · my share {fmt(e.amount)}</span>}
+                    </div>
                     <div style={{fontSize:11,color:"#555",marginTop:2}}>{e.date}</div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:CATEGORIES[e.category]?.color}}>{fmt(e.amount)}</div>
+                    {/* Show CC amount (full bill) for reconciliation */}
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:13,fontWeight:600,color:CATEGORIES[e.category]?.color}}>{fmt(e.ccAmount||e.amount)}</div>
+                      {e.ccAmount>e.amount&&<div style={{fontSize:10,color:"#666"}}>CC bill</div>}
+                    </div>
                     <button onClick={()=>toggleRecon(e)} style={{background:"#1A1A24",border:"1.5px solid #2A2A38",borderRadius:8,width:30,height:30,color:"#666",cursor:"pointer",fontSize:13,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .15s"}} onMouseEnter={ev=>{ev.currentTarget.style.background="#1A3A1A";ev.currentTarget.style.borderColor="#5AE8A0";ev.currentTarget.style.color="#5AE8A0"}} onMouseLeave={ev=>{ev.currentTarget.style.background="#1A1A24";ev.currentTarget.style.borderColor="#2A2A38";ev.currentTarget.style.color="#666"}}>✓</button>
                   </div>
                 </div>
@@ -565,7 +643,7 @@ function App() {
         })()}
       </div>
 
-      {/* Bottom nav */}
+      {/* Nav */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#0F0F13",borderTop:"1px solid #1A1A22",padding:"6px 0 max(14px,env(safe-area-inset-bottom))"}}>
         <div style={{maxWidth:520,margin:"0 auto",display:"flex",justifyContent:"space-around",alignItems:"center"}}>
           <button className={`nav ${view==="dashboard"?"on":""}`} onClick={()=>setView("dashboard")}><span className="ic">◎</span>Dash</button>
