@@ -15,59 +15,66 @@
 <div id="root"></div>
 <script type="text/babel" data-presets="react">
 const { useState, useEffect, useMemo, useRef, useCallback } = React;
-const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line, CartesianGrid } = window.Recharts || {};
+const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
+        ResponsiveContainer, LineChart, Line, CartesianGrid, ReferenceLine } = window.Recharts || {};
 
-const CLIENT_ID  = "198840607286-npt8da6voqh9bf5hqfvd2dnuespr9nph.apps.googleusercontent.com";
-const SHEET_ID   = "1L6Zl5PMZTKxWXNJoOmdc2vl_oY6e4Ur8EsNCN2SnQrk";
-const SHEET_NAME = "Expenses";
-const SCOPES     = "https://www.googleapis.com/auth/spreadsheets";
-const DISCOVERY  = "https://sheets.googleapis.com/$discovery/rest?version=v4";
+const CLIENT_ID    = "198840607286-npt8da6voqh9bf5hqfvd2dnuespr9nph.apps.googleusercontent.com";
+const SHEET_ID     = "1L6Zl5PMZTKxWXNJoOmdc2vl_oY6e4Ur8EsNCN2SnQrk";
+const EXP_SHEET    = "Expenses";
+const INC_SHEET    = "Income";
+const SCOPES       = "https://www.googleapis.com/auth/spreadsheets";
+const DISCOVERY    = "https://sheets.googleapis.com/$discovery/rest?version=v4";
 
-// Columns: Date | Category | Subcategory | Amount (my share) | Note | Reconciled | Payment | CC Amount (full bill)
-const r2e = (row, i) => ({
-  id: i+2, date: row[0]||"", category: row[1]||"Other",
-  subcategory: row[2]||"Miscellaneous", amount: parseFloat(row[3])||0,
-  note: row[4]||"", reconciled: row[5]==="TRUE",
-  payment: row[6]||"CC",
-  ccAmount: parseFloat(row[7]) || parseFloat(row[3]) || 0
+// Expenses: Date|Category|Subcategory|Amount|Note|Reconciled|Payment|CC Amount
+const r2e = (row,i) => ({
+  id:i+2, date:row[0]||"", category:row[1]||"Other",
+  subcategory:row[2]||"Miscellaneous", amount:parseFloat(row[3])||0,
+  note:row[4]||"", reconciled:row[5]==="TRUE",
+  payment:row[6]||"CC", ccAmount:parseFloat(row[7])||parseFloat(row[3])||0
 });
-const e2r = e => [
-  e.date, e.category, e.subcategory, e.amount, e.note,
-  e.reconciled?"TRUE":"FALSE", e.payment||"CC", e.ccAmount||e.amount
-];
+const e2r = e => [e.date,e.category,e.subcategory,e.amount,e.note,
+                  e.reconciled?"TRUE":"FALSE",e.payment||"CC",e.ccAmount||e.amount];
+
+// Income: Date|Type|Amount|Note
+const r2i = (row,i) => ({
+  id:"i"+(i+2), date:row[0]||"",
+  type:row[1]||"Monthly Salary",
+  amount:parseFloat(row[2])||0, note:row[3]||""
+});
+const i2r = i => [i.date, i.type, i.amount, i.note];
 
 const CATEGORIES = {
-  "Food":      { icon:"🍽️", color:"#E8845A", sub:["Groceries","Eating Out","Food Delivery"] },
-  "Transport": { icon:"🚗", color:"#5A9BE8", sub:["Uber/Cab","Train/Metro","Flights"] },
-  "Lifestyle": { icon:"🧺", color:"#9B5AE8", sub:["Laundry","Shopping","Gifts","Entertainment","Subscriptions"] },
-  "Financial": { icon:"💰", color:"#5AE8A0", sub:["Insurance","EMI","Investments"] },
-  "Home":      { icon:"🏠", color:"#E8C45A", sub:["Rent","Maintenance","Electricity","Internet"] },
-  "Loans":     { icon:"🏦", color:"#E85A9B", sub:["Personal Loan","Education Loan","Lent Money"] },
-  "One Time":  { icon:"🛒", color:"#5AE8D4", sub:["Electronics","Furniture","Clothing","Other Purchase"] },
-  "Other":     { icon:"📦", color:"#E8D45A", sub:["Miscellaneous","Donation"] }
+  "Food":      {icon:"🍽️",color:"#E8845A",sub:["Groceries","Eating Out","Food Delivery"]},
+  "Transport": {icon:"🚗",color:"#5A9BE8",sub:["Uber/Cab","Train/Metro","Flights"]},
+  "Lifestyle": {icon:"🧺",color:"#9B5AE8",sub:["Laundry","Shopping","Gifts","Entertainment","Subscriptions"]},
+  "Financial": {icon:"💰",color:"#5AE8A0",sub:["Insurance","EMI","Investments"]},
+  "Home":      {icon:"🏠",color:"#E8C45A",sub:["Rent","Maintenance","Electricity","Internet"]},
+  "Loans":     {icon:"🏦",color:"#E85A9B",sub:["Personal Loan","Education Loan","Lent Money"]},
+  "One Time":  {icon:"🛒",color:"#5AE8D4",sub:["Electronics","Furniture","Clothing","Other Purchase"]},
+  "Other":     {icon:"📦",color:"#E8D45A",sub:["Miscellaneous","Donation"]}
 };
 
-const fmt    = n => "₹" + Number(n).toLocaleString("en-IN",{maximumFractionDigits:0});
+const fmt    = n => "₹"+Number(n).toLocaleString("en-IN",{maximumFractionDigits:0});
 const getNow = () => new Date().toISOString().split("T")[0];
 const MN     = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
 
 function monthRange() {
   const n=new Date();
   return {
-    start: new Date(n.getFullYear(),n.getMonth(),1).toISOString().split("T")[0],
-    end:   new Date(n.getFullYear(),n.getMonth()+1,0).toISOString().split("T")[0]
+    start:new Date(n.getFullYear(),n.getMonth(),1).toISOString().split("T")[0],
+    end:  new Date(n.getFullYear(),n.getMonth()+1,0).toISOString().split("T")[0]
   };
 }
 
-const CSS = `
+const CSS=`
 @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600&family=Syne:wght@700;800&display=swap');
 *{box-sizing:border-box;margin:0;padding:0}body{overscroll-behavior:none}
 ::-webkit-scrollbar{width:4px}::-webkit-scrollbar-track{background:#1A1A22}::-webkit-scrollbar-thumb{background:#333;border-radius:4px}
 input,button{font-family:inherit}
 .tab{background:none;border:none;color:#888;font-size:13px;font-weight:500;cursor:pointer;padding:8px 14px;border-radius:20px;transition:all .2s}
 .tab.on{background:#1E1E28;color:#F0EDE6}
-.nav{background:none;border:none;color:#666;font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;padding:8px 0;display:flex;flex-direction:column;align-items:center;gap:3px;transition:color .2s;min-width:52px}
-.nav.on{color:#E8845A}.nav .ic{font-size:18px}
+.nav{background:none;border:none;color:#666;font-size:10px;font-weight:600;letter-spacing:.8px;text-transform:uppercase;cursor:pointer;padding:8px 0;display:flex;flex-direction:column;align-items:center;gap:3px;transition:color .2s;min-width:48px}
+.nav.on{color:#E8845A}.nav .ic{font-size:17px}
 .chip{border:1.5px solid #2A2A35;background:#16161E;border-radius:10px;padding:10px 12px;cursor:pointer;transition:all .18s;display:flex;align-items:center;gap:8px;font-size:13px;font-weight:500;color:#F0EDE6}
 .chip.on{border-color:var(--ac);background:color-mix(in srgb,var(--ac) 12%,#16161E);color:var(--ac)}
 .sc{border:1.5px solid #2A2A35;background:none;border-radius:20px;padding:6px 14px;cursor:pointer;transition:all .18s;font-size:12px;font-weight:500;color:#888}
@@ -77,10 +84,11 @@ input,button{font-family:inherit}
 .ti{background:#1A1A24;border:1.5px solid #2A2A38;border-radius:10px;color:#F0EDE6;font-size:14px;width:100%;padding:12px 16px;outline:none}
 .ti::placeholder{color:#444}
 .ni{background:#1A1A24;border:1.5px solid #2A2A38;border-radius:10px;color:#F0EDE6;font-size:16px;width:100%;padding:10px 14px;outline:none;text-align:center}
-.ni::placeholder{color:#444}
 .di{background:#1A1A24;border:1.5px solid #2A2A38;border-radius:10px;color:#F0EDE6;font-size:14px;padding:10px 14px;outline:none;width:100%;color-scheme:dark}
 .sb{width:100%;background:#E8845A;color:#0F0F13;border:none;border-radius:14px;font-size:16px;font-weight:700;font-family:'Syne',sans-serif;padding:18px;cursor:pointer;transition:all .2s}
 .sb:hover{background:#f09070;transform:translateY(-1px)}.sb.ok{background:#5AE8A0}
+.ib{width:100%;background:#5AE8A0;color:#0F0F13;border:none;border-radius:14px;font-size:16px;font-weight:700;font-family:'Syne',sans-serif;padding:18px;cursor:pointer;transition:all .2s}
+.ib:hover{background:#7af0b5;transform:translateY(-1px)}.ib.ok{background:#E8845A}
 .card{background:#16161E;border:1px solid #1E1E2A;border-radius:16px;padding:18px}
 .er{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid #1A1A24}
 .er:last-child{border-bottom:none}
@@ -95,11 +103,11 @@ input,button{font-family:inherit}
 .toggle-row{display:flex;align-items:center;justify-content:space-between;background:#1A1A24;border:1.5px solid #2A2A38;border-radius:12px;padding:12px 16px}
 .toggle{width:44px;height:24px;border-radius:12px;border:none;cursor:pointer;position:relative;transition:background .2s;flex-shrink:0}
 .toggle::after{content:'';position:absolute;width:18px;height:18px;border-radius:50%;background:white;top:3px;left:3px;transition:left .2s}
-.toggle.on{background:#E8845A}.toggle.on::after{left:23px}
-.toggle.off{background:#2A2A38}
+.toggle.on{background:#E8845A}.toggle.on::after{left:23px}.toggle.off{background:#2A2A38}
 .pay-btn{flex:1;padding:10px;border:1.5px solid #2A2A35;background:none;border-radius:10px;color:#888;font-size:13px;font-weight:500;cursor:pointer;transition:all .18s;text-align:center}
 .pay-btn.on{border-color:var(--ac);color:var(--ac);background:color-mix(in srgb,var(--ac) 10%,transparent)}
-.badge{font-size:10px;padding:2px 7px;border-radius:10px;font-weight:600;letter-spacing:.5px}
+.mode-btn{flex:1;padding:12px;border:1.5px solid #2A2A35;background:#13131A;border-radius:12px;color:#888;font-size:13px;font-weight:600;cursor:pointer;transition:all .18s;text-align:center}
+.mode-btn.on{border-color:var(--ac);color:var(--ac);background:color-mix(in srgb,var(--ac) 10%,transparent)}
 `;
 
 function App() {
@@ -111,40 +119,48 @@ function App() {
   const initDone              = useRef(false);
 
   const [expenses,   setExpenses]   = useState([]);
+  const [incomes,    setIncomes]    = useState([]);
   const [syncing,    setSyncing]    = useState(false);
   const [syncMsg,    setSyncMsg]    = useState("");
   const [dataLoaded, setDataLoaded] = useState(false);
 
-  const [view,  setView]  = useState("dashboard");
-  const [range, setRange] = useState("month");
-  const [tab,   setTab]   = useState("overview");
-  const [srch,  setSrch]  = useState("");
+  const [view,    setView]    = useState("dashboard");
+  const [addMode, setAddMode] = useState("expense"); // "expense" | "income"
+  const [range,   setRange]   = useState("month");
+  const [tab,     setTab]     = useState("overview");
+  const [srch,    setSrch]    = useState("");
 
-  // Add form state
+  // Expense form
   const [cat,     setCat]     = useState("Food");
   const [sub,     setSub]     = useState("Groceries");
   const [amt,     setAmt]     = useState("");
   const [nte,     setNte]     = useState("");
   const [dt,      setDt]      = useState(getNow());
   const [saved,   setSaved]   = useState(false);
-  const [payment, setPayment] = useState("CC");       // "CC" | "Cash"
+  const [payment, setPayment] = useState("CC");
   const [isSplit, setIsSplit] = useState(false);
   const [splitN,  setSplitN]  = useState(2);
 
+  // Income form
+  const [incType, setIncType] = useState("Monthly Salary");
+  const [incAmt,  setIncAmt]  = useState("");
+  const [incNote, setIncNote] = useState("");
+  const [incDt,   setIncDt]   = useState(getNow());
+  const [incSaved,setIncSaved]= useState(false);
+
   useEffect(()=>{ setSub(CATEGORIES[cat].sub[0]); },[cat]);
 
-  // Computed split values
-  const fullAmt  = parseFloat(amt) || 0;
-  const myAmt    = isSplit && splitN > 1 ? Math.round((fullAmt / splitN) * 100) / 100 : fullAmt;
-  const ccAmt    = payment === "CC" ? fullAmt : 0; // CC amount is always the full bill amount
+  const fullAmt = parseFloat(amt)||0;
+  const myAmt   = isSplit&&splitN>1 ? Math.round(fullAmt/splitN*100)/100 : fullAmt;
+  const ccAmt   = payment==="CC" ? fullAmt : 0;
 
-  // Load scripts
+  // ── Load scripts ──────────────────────────────────────────────────────────
   useEffect(()=>{
     function loadGapi() {
-      if (window.gapi) {
-        window.gapi.load("client", async ()=>{
-          try { await window.gapi.client.init({discoveryDocs:[DISCOVERY]}); setGapiOk(true); }
-          catch(e) { setAuth("error"); setAuthErr("Google API init failed: "+e.message); }
+      if(window.gapi){
+        window.gapi.load("client",async()=>{
+          try{ await window.gapi.client.init({discoveryDocs:[DISCOVERY]}); setGapiOk(true); }
+          catch(e){ setAuth("error"); setAuthErr("Google API init failed: "+e.message); }
         });
       } else {
         const s=document.createElement("script"); s.src="https://apis.google.com/js/api.js";
@@ -153,11 +169,11 @@ function App() {
       }
     }
     function loadGis() {
-      if (window.google?.accounts?.oauth2) {
-        tokenRef.current = window.google.accounts.oauth2.initTokenClient({
+      if(window.google?.accounts?.oauth2){
+        tokenRef.current=window.google.accounts.oauth2.initTokenClient({
           client_id:CLIENT_ID, scope:SCOPES,
-          callback: async resp => {
-            if (resp.error) { setAuthErr(resp.error); setAuth("error"); return; }
+          callback:async resp=>{
+            if(resp.error){ setAuthErr(resp.error); setAuth("error"); return; }
             setAuth("ready"); await doLoad();
           }
         });
@@ -172,145 +188,200 @@ function App() {
   },[]);
 
   useEffect(()=>{
-    if (gapiOk && gisOk && !initDone.current) {
+    if(gapiOk&&gisOk&&!initDone.current){
       initDone.current=true;
-      try { tokenRef.current.requestAccessToken({prompt:""}); }
-      catch(e) { setAuth("error"); setAuthErr(String(e)); }
+      try{ tokenRef.current.requestAccessToken({prompt:""}); }
+      catch(e){ setAuth("error"); setAuthErr(String(e)); }
     }
   },[gapiOk,gisOk]);
 
-  const flash = msg => { setSyncMsg(msg); setTimeout(()=>setSyncMsg(""),3500); };
+  const flash = msg=>{ setSyncMsg(msg); setTimeout(()=>setSyncMsg(""),3500); };
 
-  const ensureHeader = async () => {
-    const r = await gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${SHEET_NAME}!A1:H1`});
-    if (!r.result.values || r.result.values[0]?.[0]!=="Date") {
+  const ensureSheets = async () => {
+    // Expenses header
+    const r1=await gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${EXP_SHEET}!A1:H1`});
+    if(!r1.result.values||r1.result.values[0]?.[0]!=="Date"){
       await gapi.client.sheets.spreadsheets.values.update({
-        spreadsheetId:SHEET_ID, range:`${SHEET_NAME}!A1:H1`, valueInputOption:"RAW",
+        spreadsheetId:SHEET_ID,range:`${EXP_SHEET}!A1:H1`,valueInputOption:"RAW",
         resource:{values:[["Date","Category","Subcategory","Amount","Note","Reconciled","Payment","CC Amount"]]}
+      });
+    }
+    // Income sheet — create if missing
+    const meta=await gapi.client.sheets.spreadsheets.get({spreadsheetId:SHEET_ID});
+    const exists=meta.result.sheets.some(s=>s.properties.title===INC_SHEET);
+    if(!exists){
+      await gapi.client.sheets.spreadsheets.batchUpdate({
+        spreadsheetId:SHEET_ID,
+        resource:{requests:[{addSheet:{properties:{title:INC_SHEET}}}]}
+      });
+    }
+    const r2=await gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${INC_SHEET}!A1:D1`});
+    if(!r2.result.values||r2.result.values[0]?.[0]!=="Date"){
+      await gapi.client.sheets.spreadsheets.values.update({
+        spreadsheetId:SHEET_ID,range:`${INC_SHEET}!A1:D1`,valueInputOption:"RAW",
+        resource:{values:[["Date","Type","Amount","Note"]]}
       });
     }
   };
 
-  const doLoad = useCallback(async ()=>{
+  const doLoad = useCallback(async()=>{
     setSyncing(true);
-    try {
-      await ensureHeader();
-      const r = await gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${SHEET_NAME}!A2:H`});
-      const rows = r.result.values||[];
-      setExpenses(rows.map(r2e).filter(e=>e.amount>0).sort((a,b)=>b.date.localeCompare(a.date)));
+    try{
+      await ensureSheets();
+      const [re,ri] = await Promise.all([
+        gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${EXP_SHEET}!A2:H`}),
+        gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${INC_SHEET}!A2:D`})
+      ]);
+      setExpenses((re.result.values||[]).map(r2e).filter(e=>e.amount>0).sort((a,b)=>b.date.localeCompare(a.date)));
+      setIncomes((ri.result.values||[]).map(r2i).filter(i=>i.amount>0).sort((a,b)=>b.date.localeCompare(a.date)));
       setDataLoaded(true); flash("✓ Synced");
-    } catch(e) { flash("⚠ "+(e.result?.error?.message||e.message||"Load error")); }
-    finally { setSyncing(false); }
+    } catch(e){ flash("⚠ "+(e.result?.error?.message||e.message||"Load error")); }
+    finally{ setSyncing(false); }
   },[]);
 
-  const signIn = () => {
-    setAuth("loading");
-    try { tokenRef.current.requestAccessToken({prompt:"consent"}); }
-    catch(e) { setAuth("error"); setAuthErr("Could not open Google sign-in: "+e.message); }
-  };
+  const signIn=()=>{ setAuth("loading"); try{ tokenRef.current.requestAccessToken({prompt:"consent"}); } catch(e){ setAuth("error"); setAuthErr(String(e)); } };
 
-  const handleSave = async () => {
-    if (!amt||isNaN(amt)||fullAmt<=0) return;
-    const entry = {
-      id: Date.now(), date:dt, category:cat, subcategory:sub,
-      amount: myAmt,          // my share
-      note: nte.trim(),
-      reconciled: false,
-      payment,
-      ccAmount: ccAmt         // full CC bill amount (same as fullAmt if CC, 0 if Cash)
-    };
+  // ── Save expense ──────────────────────────────────────────────────────────
+  const handleSaveExpense = async()=>{
+    if(!amt||isNaN(amt)||fullAmt<=0) return;
+    const entry={id:Date.now(),date:dt,category:cat,subcategory:sub,amount:myAmt,
+                 note:nte.trim(),reconciled:false,payment,ccAmount:ccAmt};
     setExpenses(p=>[entry,...p].sort((a,b)=>b.date.localeCompare(a.date)));
     setAmt(""); setNte(""); setDt(getNow()); setIsSplit(false); setSplitN(2);
     setSaved(true); setTimeout(()=>setSaved(false),1200);
-    try {
+    try{
       await gapi.client.sheets.spreadsheets.values.append({
-        spreadsheetId:SHEET_ID, range:`${SHEET_NAME}!A:H`,
-        valueInputOption:"RAW", insertDataOption:"INSERT_ROWS",
+        spreadsheetId:SHEET_ID,range:`${EXP_SHEET}!A:H`,
+        valueInputOption:"RAW",insertDataOption:"INSERT_ROWS",
         resource:{values:[e2r(entry)]}
       });
       flash("✓ Saved to Sheet");
-    } catch { flash("⚠ Save failed"); }
+    } catch{ flash("⚠ Save failed"); }
   };
 
-  const findRow = async e => {
-    const r=await gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${SHEET_NAME}!A:H`});
+  // ── Save income ───────────────────────────────────────────────────────────
+  const handleSaveIncome = async()=>{
+    const a=parseFloat(incAmt);
+    if(!a||a<=0) return;
+    const entry={id:"i"+Date.now(),date:incDt,type:incType,amount:a,note:incNote.trim()};
+    setIncomes(p=>[entry,...p].sort((a,b)=>b.date.localeCompare(a.date)));
+    setIncAmt(""); setIncNote(""); setIncDt(getNow());
+    setIncSaved(true); setTimeout(()=>setIncSaved(false),1200);
+    try{
+      await gapi.client.sheets.spreadsheets.values.append({
+        spreadsheetId:SHEET_ID,range:`${INC_SHEET}!A:D`,
+        valueInputOption:"RAW",insertDataOption:"INSERT_ROWS",
+        resource:{values:[i2r(entry)]}
+      });
+      flash("✓ Income saved");
+    } catch{ flash("⚠ Save failed"); }
+  };
+
+  const findExpRow = async e=>{
+    const r=await gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${EXP_SHEET}!A:H`});
     return (r.result.values||[]).findIndex(row=>row[0]===e.date&&row[1]===e.category&&row[2]===e.subcategory&&parseFloat(row[3])===e.amount&&row[4]===e.note);
   };
-
-  const toggleRecon = async e => {
+  const toggleRecon=async e=>{
     const u={...e,reconciled:!e.reconciled};
     setExpenses(p=>p.map(x=>x.id===e.id?u:x));
-    try {
-      const ri=await findRow(e);
+    try{
+      const ri=await findExpRow(e);
       if(ri>0) await gapi.client.sheets.spreadsheets.values.update({
-        spreadsheetId:SHEET_ID,range:`${SHEET_NAME}!F${ri+1}`,
+        spreadsheetId:SHEET_ID,range:`${EXP_SHEET}!F${ri+1}`,
         valueInputOption:"RAW",resource:{values:[[u.reconciled?"TRUE":"FALSE"]]}
       });
       flash("✓ Updated");
-    } catch { flash("⚠ Sync failed"); }
+    } catch{ flash("⚠ Sync failed"); }
   };
-
-  const deleteExp = async e => {
+  const deleteExp=async e=>{
     setExpenses(p=>p.filter(x=>x.id!==e.id));
-    try {
-      const ri=await findRow(e);
+    try{
+      const ri=await findExpRow(e);
       if(ri>0){
         const m=await gapi.client.sheets.spreadsheets.get({spreadsheetId:SHEET_ID});
-        const sid=m.result.sheets.find(s=>s.properties.title===SHEET_NAME)?.properties.sheetId;
+        const sid=m.result.sheets.find(s=>s.properties.title===EXP_SHEET)?.properties.sheetId;
         await gapi.client.sheets.spreadsheets.batchUpdate({
           spreadsheetId:SHEET_ID,
           resource:{requests:[{deleteDimension:{range:{sheetId:sid,dimension:"ROWS",startIndex:ri,endIndex:ri+1}}}]}
         });
       }
       flash("✓ Deleted");
-    } catch { flash("⚠ Delete failed"); }
+    } catch{ flash("⚠ Delete failed"); }
   };
 
-  // ── Derived ───────────────────────────────────────────────────────────────
-  const filtered = useMemo(()=>{
+  // ── Derived data ──────────────────────────────────────────────────────────
+  const filtered=useMemo(()=>{
     if(range==="month"){const{start,end}=monthRange();return expenses.filter(e=>e.date>=start&&e.date<=end);}
     if(range==="week"){const d=new Date();d.setDate(d.getDate()-6);return expenses.filter(e=>e.date>=d.toISOString().split("T")[0]);}
     return expenses;
   },[expenses,range]);
 
-  const total = useMemo(()=>filtered.reduce((s,e)=>s+e.amount,0),[filtered]);
+  const filteredInc=useMemo(()=>{
+    if(range==="month"){const{start,end}=monthRange();return incomes.filter(i=>i.date>=start&&i.date<=end);}
+    if(range==="week"){const d=new Date();d.setDate(d.getDate()-6);return incomes.filter(i=>i.date>=d.toISOString().split("T")[0]);}
+    return incomes;
+  },[incomes,range]);
 
-  const byCat = useMemo(()=>{
+  const totalExp = useMemo(()=>filtered.reduce((s,e)=>s+e.amount,0),[filtered]);
+  const totalInc = useMemo(()=>filteredInc.reduce((s,i)=>s+i.amount,0),[filteredInc]);
+  const savings  = totalInc - totalExp;
+
+  const byCat=useMemo(()=>{
     const m={};
     for(const e of filtered) m[e.category]=(m[e.category]||0)+e.amount;
     return Object.entries(m).map(([n,v])=>({name:n,value:v,color:CATEGORIES[n]?.color||"#888"})).sort((a,b)=>b.value-a.value);
   },[filtered]);
-
-  const bySub = useMemo(()=>{
+  const bySub=useMemo(()=>{
     const m={};
     for(const e of filtered){const k=`${e.category}|${e.subcategory}`;if(!m[k])m[k]={name:e.subcategory,category:e.category,value:0,color:CATEGORIES[e.category]?.color||"#888"};m[k].value+=e.amount;}
     return Object.values(m).sort((a,b)=>b.value-a.value).slice(0,10);
   },[filtered]);
 
-  const daily = useMemo(()=>{
+  // Monthly savings trend (income - expenses per month, last 12 months)
+  const savingsTrend=useMemo(()=>{
+    const months={};
+    for(const e of expenses){
+      const d=new Date(e.date);const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      if(!months[k]) months[k]={label:`${MN[d.getMonth()]} ${d.getFullYear()}`,exp:0,inc:0};
+      months[k].exp+=e.amount;
+    }
+    for(const i of incomes){
+      const d=new Date(i.date);const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      if(!months[k]) months[k]={label:`${MN[d.getMonth()]} ${d.getFullYear()}`,exp:0,inc:0};
+      months[k].inc+=i.amount;
+    }
+    return Object.entries(months).sort((a,b)=>a[0].localeCompare(b[0])).slice(-12)
+      .map(([,v])=>({...v,savings:v.inc-v.exp}));
+  },[expenses,incomes]);
+
+  // Cumulative savings over all time
+  const cumulativeSavings=useMemo(()=>{
+    let running=0;
+    return savingsTrend.map(m=>{ running+=m.savings; return {...m,cumulative:running}; });
+  },[savingsTrend]);
+
+  const daily=useMemo(()=>{
     const days=[];const now=new Date();
     for(let i=13;i>=0;i--){const d=new Date(now);d.setDate(d.getDate()-i);const k=d.toISOString().split("T")[0];days.push({label:`${d.getDate()} ${MN[d.getMonth()]}`,date:k,value:0});}
     for(const e of expenses){const f=days.find(d=>d.date===e.date);if(f)f.value+=e.amount;}
     return days;
   },[expenses]);
 
-  const monthly = useMemo(()=>{
-    const m={};
-    for(const e of expenses){const d=new Date(e.date);const k=`${MN[d.getMonth()]} ${d.getFullYear()}`;m[k]=(m[k]||0)+e.amount;}
-    return Object.entries(m).slice(-12).map(([label,value])=>({label,value}));
-  },[expenses]);
-
-  const hist = useMemo(()=>{
+  const hist=useMemo(()=>{
     if(!srch) return expenses;
     const q=srch.toLowerCase();
     return expenses.filter(e=>e.note.toLowerCase().includes(q)||e.subcategory.toLowerCase().includes(q)||e.category.toLowerCase().includes(q));
   },[expenses,srch]);
 
-  const rl = range==="month"?(()=>{const n=new Date();return `${MN[n.getMonth()]} ${n.getFullYear()}`;})():range==="week"?"Last 7 days":"All time";
-  const Tip = ({active,payload,label})=>active&&payload?.length?<div className="tt">{label&&<div style={{color:"#888",marginBottom:2}}>{label}</div>}{fmt(payload[0].value)}</div>:null;
+  const rl=range==="month"?(()=>{const n=new Date();return `${MN[n.getMonth()]} ${n.getFullYear()}`;})():range==="week"?"Last 7 days":"All time";
+  const Tip=({active,payload,label})=>active&&payload?.length?<div className="tt">{label&&<div style={{color:"#888",marginBottom:2}}>{label}</div>}{fmt(payload[0].value)}</div>:null;
+  const MultiTip=({active,payload,label})=>active&&payload?.length?<div className="tt">
+    <div style={{color:"#888",marginBottom:4}}>{label}</div>
+    {payload.map((p,i)=><div key={i} style={{color:p.color,marginBottom:2}}>{p.name}: {fmt(p.value)}</div>)}
+  </div>:null;
 
-  // ── Loading ───────────────────────────────────────────────────────────────
-  if (auth==="loading") return (
+  // ── Loading / Auth screens ─────────────────────────────────────────────────
+  if(auth==="loading") return (
     <div style={{minHeight:"100vh",background:"#0F0F13",color:"#F0EDE6",fontFamily:"'DM Sans',sans-serif",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:16}}>
       <style>{CSS}</style>
       <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:36}}>paisa<span style={{color:"#E8845A"}}>.</span></div>
@@ -319,13 +390,11 @@ function App() {
       <button onClick={()=>setAuth("error")} style={{marginTop:24,background:"none",border:"1px solid #333",borderRadius:10,color:"#555",fontSize:12,padding:"8px 16px",cursor:"pointer"}}>Sign in manually instead</button>
     </div>
   );
-
-  if (auth==="error"||auth==="need-login") return (
+  if(auth==="error"||auth==="need-login") return (
     <div style={{minHeight:"100vh",background:"#0F0F13",color:"#F0EDE6",fontFamily:"'DM Sans',sans-serif",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:32,textAlign:"center",gap:12}}>
       <style>{CSS}</style>
       <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:36}}>paisa<span style={{color:"#E8845A"}}>.</span></div>
-      <div style={{fontSize:14,color:"#aaa",marginTop:16}}>Sign in with Google to access your private finance data</div>
-      <div style={{fontSize:12,color:"#555"}}>Your data stays in your private Google Sheet</div>
+      <div style={{fontSize:14,color:"#aaa",marginTop:16}}>Sign in with Google to access your finance data</div>
       {authErr&&<div style={{fontSize:11,color:"#E85A5A",maxWidth:320,marginTop:4}}>{authErr}</div>}
       <button onClick={signIn} style={{marginTop:20,background:"#E8845A",color:"#0F0F13",border:"none",borderRadius:14,fontSize:15,fontWeight:700,fontFamily:"'Syne',sans-serif",padding:"14px 40px",cursor:"pointer"}}>🔐 Sign in with Google</button>
     </div>
@@ -335,7 +404,6 @@ function App() {
   return (
     <div style={{minHeight:"100vh",background:"#0F0F13",color:"#F0EDE6",fontFamily:"'DM Sans',sans-serif"}}>
       <style>{CSS}</style>
-
       <div style={{padding:"20px 20px 0",maxWidth:520,margin:"0 auto"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
           <div>
@@ -358,14 +426,33 @@ function App() {
 
         {/* ── DASHBOARD ── */}
         {view==="dashboard"&&<>
-          <div style={{marginBottom:20}}>
-            <div className="lbl">{rl}</div>
-            <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:40,letterSpacing:"-1px",lineHeight:1}}>{fmt(total)}</div>
+          {/* Hero strip — Income / Expenses / Savings */}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:20}}>
+            <div className="card" style={{padding:"14px 12px",textAlign:"center"}}>
+              <div style={{fontSize:10,color:"#5AE8A0",letterSpacing:"1px",textTransform:"uppercase",marginBottom:6}}>Income</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:16,color:"#5AE8A0"}}>{fmt(totalInc)}</div>
+            </div>
+            <div className="card" style={{padding:"14px 12px",textAlign:"center"}}>
+              <div style={{fontSize:10,color:"#E8845A",letterSpacing:"1px",textTransform:"uppercase",marginBottom:6}}>Spent</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:16,color:"#E8845A"}}>{fmt(totalExp)}</div>
+            </div>
+            <div className="card" style={{padding:"14px 12px",textAlign:"center",background:savings>=0?"color-mix(in srgb,#5AE8A0 8%,#16161E)":"color-mix(in srgb,#E85A5A 8%,#16161E)"}}>
+              <div style={{fontSize:10,color:savings>=0?"#5AE8A0":"#E85A5A",letterSpacing:"1px",textTransform:"uppercase",marginBottom:6}}>Saved</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:16,color:savings>=0?"#5AE8A0":"#E85A5A"}}>{fmt(Math.abs(savings))}</div>
+            </div>
+          </div>
+
+          <div style={{marginBottom:4}}>
+            <div className="lbl">{rl} · Total Spent</div>
+            <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:38,letterSpacing:"-1px",lineHeight:1}}>{fmt(totalExp)}</div>
             <div style={{fontSize:13,color:"#555",marginTop:6}}>{filtered.length} transactions</div>
           </div>
-          <div style={{display:"flex",gap:4,marginBottom:18,background:"#13131A",borderRadius:24,padding:4}}>
-            {["overview","breakdown","trends"].map(t=>(
-              <button key={t} className={`tab ${tab===t?"on":""}`} style={{flex:1,textAlign:"center"}} onClick={()=>setTab(t)}>{t[0].toUpperCase()+t.slice(1)}</button>
+
+          <div style={{display:"flex",gap:4,margin:"18px 0",background:"#13131A",borderRadius:24,padding:4}}>
+            {["overview","breakdown","trends","savings"].map(t=>(
+              <button key={t} className={`tab ${tab===t?"on":""}`} style={{flex:1,textAlign:"center",fontSize:11}} onClick={()=>setTab(t)}>
+                {t[0].toUpperCase()+t.slice(1)}
+              </button>
             ))}
           </div>
 
@@ -397,7 +484,7 @@ function App() {
               </div>
               <div className="card">
                 <div className="lbl">Recent</div>
-                {filtered.slice(0,7).map(e=>(
+                {filtered.slice(0,6).map(e=>(
                   <div key={e.id} className="er">
                     <div style={{width:34,height:34,borderRadius:10,background:`${CATEGORIES[e.category]?.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{CATEGORIES[e.category]?.icon}</div>
                     <div style={{flex:1,minWidth:0}}>
@@ -407,7 +494,7 @@ function App() {
                       </div>
                       <div style={{fontSize:11,color:"#555",marginTop:2,display:"flex",gap:8}}>
                         <span>{e.date}</span>
-                        <span style={{color:e.payment==="CC"?"#5A9BE8":"#5AE8A0"}}>{e.payment==="CC"?"💳 CC":"💵 Cash"}</span>
+                        <span style={{color:e.payment==="CC"?"#5A9BE8":"#5AE8A0"}}>{e.payment==="CC"?"💳":"💵"}</span>
                       </div>
                     </div>
                     <div style={{fontSize:13,fontWeight:600,color:CATEGORIES[e.category]?.color}}>{fmt(e.amount)}</div>
@@ -438,7 +525,7 @@ function App() {
                   <div><div style={{fontSize:13,fontWeight:500}}>{s.name}</div><div style={{fontSize:11,color:"#555",marginTop:1}}>{s.category}</div></div>
                   <div style={{textAlign:"right"}}>
                     <div style={{fontSize:13,fontWeight:600,color:s.color}}>{fmt(s.value)}</div>
-                    <div style={{fontSize:11,color:"#555"}}>{total>0?Math.round(s.value/total*100):0}%</div>
+                    <div style={{fontSize:11,color:"#555"}}>{totalExp>0?Math.round(s.value/totalExp*100):0}%</div>
                   </div>
                 </div>
               ))}
@@ -459,101 +546,187 @@ function App() {
               </ResponsiveContainer>
             </div>
             <div className="card">
-              <div className="lbl">Monthly Totals</div>
-              {monthly.length===0?<div style={{color:"#555",fontSize:13}}>Not enough data</div>:
-                <ResponsiveContainer width="100%" height={160}>
-                  <BarChart data={monthly} barSize={16}>
+              <div className="lbl">Income vs Expenses · Monthly</div>
+              {savingsTrend.length===0?<div style={{color:"#555",fontSize:13}}>Not enough data</div>:
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={savingsTrend} barSize={10} barGap={3}>
                     <XAxis dataKey="label" tick={{fill:"#888",fontSize:10}} tickLine={false} axisLine={false}/>
                     <YAxis hide/>
-                    <Tooltip content={<Tip/>}/>
-                    <Bar dataKey="value" fill="#5A9BE8" radius={[5,5,0,0]}/>
+                    <Tooltip content={<MultiTip/>}/>
+                    <Bar dataKey="inc"  name="Income"  fill="#5AE8A0" radius={[4,4,0,0]}/>
+                    <Bar dataKey="exp"  name="Expenses" fill="#E8845A" radius={[4,4,0,0]}/>
                   </BarChart>
                 </ResponsiveContainer>
               }
+            </div>
+          </>}
+
+          {dataLoaded&&tab==="savings"&&<>
+            {/* Total accumulated savings */}
+            <div className="card" style={{marginBottom:16,textAlign:"center",padding:"24px 18px"}}>
+              <div className="lbl">Total Accumulated Savings</div>
+              <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:36,color:cumulativeSavings.length&&cumulativeSavings.at(-1).cumulative>=0?"#5AE8A0":"#E85A5A",letterSpacing:"-1px",marginTop:4}}>
+                {cumulativeSavings.length ? fmt(cumulativeSavings.at(-1).cumulative) : fmt(0)}
+              </div>
+              <div style={{fontSize:12,color:"#555",marginTop:6}}>Jul 2024 → present</div>
+            </div>
+
+            {/* Monthly savings bar */}
+            <div className="card" style={{marginBottom:16}}>
+              <div className="lbl">Monthly Savings</div>
+              {savingsTrend.length===0?<div style={{color:"#555",fontSize:13}}>Not enough data</div>:
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={savingsTrend} barSize={16}>
+                    <XAxis dataKey="label" tick={{fill:"#888",fontSize:10}} tickLine={false} axisLine={false}/>
+                    <YAxis hide/>
+                    <ReferenceLine y={0} stroke="#333" strokeDasharray="3 3"/>
+                    <Tooltip content={({active,payload,label})=>active&&payload?.length?<div className="tt"><div style={{color:"#888",marginBottom:2}}>{label}</div><div style={{color:payload[0].value>=0?"#5AE8A0":"#E85A5A"}}>{fmt(payload[0].value)}</div></div>:null}/>
+                    <Bar dataKey="savings" name="Savings" radius={[4,4,0,0]}>
+                      {savingsTrend.map((s,i)=><Cell key={i} fill={s.savings>=0?"#5AE8A0":"#E85A5A"}/>)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              }
+            </div>
+
+            {/* Cumulative line */}
+            <div className="card" style={{marginBottom:16}}>
+              <div className="lbl">Cumulative Savings Over Time</div>
+              {cumulativeSavings.length===0?<div style={{color:"#555",fontSize:13}}>Not enough data</div>:
+                <ResponsiveContainer width="100%" height={150}>
+                  <LineChart data={cumulativeSavings}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="#1E1E2A"/>
+                    <XAxis dataKey="label" tick={{fill:"#555",fontSize:10}} tickLine={false} axisLine={false} interval={2}/>
+                    <YAxis hide/>
+                    <ReferenceLine y={0} stroke="#555" strokeDasharray="3 3"/>
+                    <Tooltip content={({active,payload,label})=>active&&payload?.length?<div className="tt"><div style={{color:"#888",marginBottom:2}}>{label}</div><div style={{color:"#5AE8A0"}}>{fmt(payload[0].value)}</div></div>:null}/>
+                    <Line type="monotone" dataKey="cumulative" stroke="#5AE8A0" strokeWidth={2} dot={false} activeDot={{r:4,fill:"#5AE8A0"}}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              }
+            </div>
+
+            {/* Per-month breakdown table */}
+            <div className="card">
+              <div className="lbl">Month by Month</div>
+              {savingsTrend.slice().reverse().map((m,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"9px 0",borderBottom:i<savingsTrend.length-1?"1px solid #1A1A24":"none"}}>
+                  <div style={{fontSize:13,fontWeight:500}}>{m.label}</div>
+                  <div style={{display:"flex",gap:16,alignItems:"center"}}>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:10,color:"#5AE8A0"}}>IN</div>
+                      <div style={{fontSize:12,fontWeight:600,color:"#5AE8A0"}}>{fmt(m.inc)}</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:10,color:"#E8845A"}}>OUT</div>
+                      <div style={{fontSize:12,fontWeight:600,color:"#E8845A"}}>{fmt(m.exp)}</div>
+                    </div>
+                    <div style={{textAlign:"right",minWidth:70}}>
+                      <div style={{fontSize:10,color:m.savings>=0?"#5AE8A0":"#E85A5A"}}>SAVED</div>
+                      <div style={{fontSize:12,fontWeight:700,color:m.savings>=0?"#5AE8A0":"#E85A5A"}}>{fmt(m.savings)}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
           </>}
         </>}
 
         {/* ── ADD ── */}
         {view==="add"&&<>
-          <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:22,marginBottom:20}}>New Expense</div>
-
-          {/* Amount */}
-          <div style={{marginBottom:16}}>
-            <div className="lbl">Amount{isSplit&&splitN>1?` (Full bill · your share: ${fmt(myAmt)})`:`${payment==="CC"?" · CC bill":""}`}</div>
-            <div style={{position:"relative"}}>
-              <span style={{position:"absolute",left:18,top:"50%",transform:"translateY(-50%)",fontSize:22,color:"#555",fontFamily:"'Syne',sans-serif",fontWeight:700}}>₹</span>
-              <input className="ai" type="number" placeholder="0" value={amt} onChange={e=>setAmt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSave()} autoFocus/>
-            </div>
-            {/* Live split preview */}
-            {isSplit&&fullAmt>0&&splitN>1&&(
-              <div style={{marginTop:10,background:"rgba(155,90,232,.08)",border:"1px solid rgba(155,90,232,.2)",borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                <span style={{fontSize:12,color:"#9B5AE8"}}>Full bill: {fmt(fullAmt)} ÷ {splitN} people</span>
-                <span style={{fontSize:14,fontWeight:700,color:"#9B5AE8"}}>Your share: {fmt(myAmt)}</span>
-              </div>
-            )}
+          {/* Mode toggle */}
+          <div style={{display:"flex",gap:8,marginBottom:24}}>
+            <button className={`mode-btn ${addMode==="expense"?"on":""}`} style={{"--ac":"#E8845A"}} onClick={()=>setAddMode("expense")}>💸 Expense</button>
+            <button className={`mode-btn ${addMode==="income"?"on":""}`}  style={{"--ac":"#5AE8A0"}} onClick={()=>setAddMode("income")}>💰 Income</button>
           </div>
 
-          {/* Payment source */}
-          <div style={{marginBottom:16}}>
-            <div className="lbl">Payment Source</div>
-            <div style={{display:"flex",gap:8}}>
-              {[["CC","💳 Credit Card","#5A9BE8"],["Cash","💵 Cash / UPI","#5AE8A0"]].map(([val,label,col])=>(
-                <button key={val} className={`pay-btn ${payment===val?"on":""}`} style={{"--ac":col}} onClick={()=>setPayment(val)}>{label}</button>
-              ))}
-            </div>
-          </div>
-
-          {/* Split toggle */}
-          <div style={{marginBottom:16}}>
-            <div className="toggle-row">
-              <div>
-                <div style={{fontSize:13,fontWeight:500}}>Split Expense</div>
-                <div style={{fontSize:11,color:"#555",marginTop:2}}>Divide among multiple people</div>
+          {/* ── EXPENSE FORM ── */}
+          {addMode==="expense"&&<>
+            <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:20,marginBottom:18}}>New Expense</div>
+            <div style={{marginBottom:16}}>
+              <div className="lbl">{isSplit&&splitN>1?`Amount (Full bill · your share: ${fmt(myAmt)})`:"Amount"}</div>
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:18,top:"50%",transform:"translateY(-50%)",fontSize:22,color:"#555",fontFamily:"'Syne',sans-serif",fontWeight:700}}>₹</span>
+                <input className="ai" type="number" placeholder="0" value={amt} onChange={e=>setAmt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSaveExpense()} autoFocus/>
               </div>
-              <button className={`toggle ${isSplit?"on":"off"}`} onClick={()=>setIsSplit(p=>!p)}/>
-            </div>
-            {isSplit&&(
-              <div style={{marginTop:10,background:"#1A1A24",border:"1.5px solid #2A2A38",borderRadius:12,padding:"12px 16px"}}>
-                <div style={{fontSize:12,color:"#666",marginBottom:10,letterSpacing:"0.5px"}}>NUMBER OF PEOPLE (including you)</div>
-                <div style={{display:"flex",alignItems:"center",gap:12,justifyContent:"center"}}>
-                  <button onClick={()=>setSplitN(n=>Math.max(2,n-1))} style={{width:36,height:36,borderRadius:"50%",background:"#2A2A38",border:"none",color:"#F0EDE6",fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
-                  <input className="ni" style={{width:70}} type="number" min="2" max="20" value={splitN} onChange={e=>setSplitN(Math.max(2,parseInt(e.target.value)||2))}/>
-                  <button onClick={()=>setSplitN(n=>Math.min(20,n+1))} style={{width:36,height:36,borderRadius:"50%",background:"#2A2A38",border:"none",color:"#F0EDE6",fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+              {isSplit&&fullAmt>0&&splitN>1&&(
+                <div style={{marginTop:10,background:"rgba(155,90,232,.08)",border:"1px solid rgba(155,90,232,.2)",borderRadius:10,padding:"10px 14px",display:"flex",justifyContent:"space-between"}}>
+                  <span style={{fontSize:12,color:"#9B5AE8"}}>Full bill: {fmt(fullAmt)} ÷ {splitN}</span>
+                  <span style={{fontSize:14,fontWeight:700,color:"#9B5AE8"}}>Your share: {fmt(myAmt)}</span>
                 </div>
+              )}
+            </div>
+            <div style={{marginBottom:16}}>
+              <div className="lbl">Payment Source</div>
+              <div style={{display:"flex",gap:8}}>
+                {[["CC","💳 Credit Card","#5A9BE8"],["Cash","💵 Cash / UPI","#5AE8A0"]].map(([val,label,col])=>(
+                  <button key={val} className={`pay-btn ${payment===val?"on":""}`} style={{"--ac":col}} onClick={()=>setPayment(val)}>{label}</button>
+                ))}
               </div>
-            )}
-          </div>
-
-          {/* Category */}
-          <div style={{marginBottom:16}}>
-            <div className="lbl">Category</div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-              {Object.entries(CATEGORIES).map(([c,info])=>(
-                <button key={c} className={`chip ${cat===c?"on":""}`} style={{"--ac":info.color}} onClick={()=>setCat(c)}>
-                  <span>{info.icon}</span><span>{c}</span>
-                </button>
-              ))}
             </div>
-          </div>
-
-          {/* Subcategory */}
-          <div style={{marginBottom:16}}>
-            <div className="lbl">Subcategory</div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-              {CATEGORIES[cat].sub.map(s=>(
-                <button key={s} className={`sc ${sub===s?"on":""}`} style={{"--ac":CATEGORIES[cat].color}} onClick={()=>setSub(s)}>{s}</button>
-              ))}
+            <div style={{marginBottom:16}}>
+              <div className="toggle-row">
+                <div><div style={{fontSize:13,fontWeight:500}}>Split Expense</div><div style={{fontSize:11,color:"#555",marginTop:2}}>Divide among multiple people</div></div>
+                <button className={`toggle ${isSplit?"on":"off"}`} onClick={()=>setIsSplit(p=>!p)}/>
+              </div>
+              {isSplit&&(
+                <div style={{marginTop:10,background:"#1A1A24",border:"1.5px solid #2A2A38",borderRadius:12,padding:"12px 16px"}}>
+                  <div style={{fontSize:11,color:"#666",marginBottom:10,letterSpacing:"0.5px",textTransform:"uppercase"}}>Number of people (including you)</div>
+                  <div style={{display:"flex",alignItems:"center",gap:12,justifyContent:"center"}}>
+                    <button onClick={()=>setSplitN(n=>Math.max(2,n-1))} style={{width:36,height:36,borderRadius:"50%",background:"#2A2A38",border:"none",color:"#F0EDE6",fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>−</button>
+                    <input className="ni" style={{width:70}} type="number" min="2" max="20" value={splitN} onChange={e=>setSplitN(Math.max(2,parseInt(e.target.value)||2))}/>
+                    <button onClick={()=>setSplitN(n=>Math.min(20,n+1))} style={{width:36,height:36,borderRadius:"50%",background:"#2A2A38",border:"none",color:"#F0EDE6",fontSize:20,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                  </div>
+                </div>
+              )}
             </div>
-          </div>
+            <div style={{marginBottom:16}}>
+              <div className="lbl">Category</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+                {Object.entries(CATEGORIES).map(([c,info])=>(
+                  <button key={c} className={`chip ${cat===c?"on":""}`} style={{"--ac":info.color}} onClick={()=>setCat(c)}><span>{info.icon}</span><span>{c}</span></button>
+                ))}
+              </div>
+            </div>
+            <div style={{marginBottom:16}}>
+              <div className="lbl">Subcategory</div>
+              <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+                {CATEGORIES[cat].sub.map(s=>(
+                  <button key={s} className={`sc ${sub===s?"on":""}`} style={{"--ac":CATEGORIES[cat].color}} onClick={()=>setSub(s)}>{s}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:24}}>
+              <div><div className="lbl">Note (optional)</div><input className="ti" placeholder="e.g. Dinner with friends" value={nte} onChange={e=>setNte(e.target.value)}/></div>
+              <div><div className="lbl">Date</div><input className="di" type="date" value={dt} onChange={e=>setDt(e.target.value)}/></div>
+            </div>
+            <button className={`sb ${saved?"ok":""}`} onClick={handleSaveExpense}>{saved?"✓ Saved!":"Save Expense"}</button>
+          </>}
 
-          {/* Note & Date */}
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:24}}>
-            <div><div className="lbl">Note (optional)</div><input className="ti" placeholder="e.g. Dinner with friends" value={nte} onChange={e=>setNte(e.target.value)}/></div>
-            <div><div className="lbl">Date</div><input className="di" type="date" value={dt} onChange={e=>setDt(e.target.value)}/></div>
-          </div>
-
-          <button className={`sb ${saved?"ok":""}`} onClick={handleSave}>{saved?"✓ Saved!":"Save Expense"}</button>
+          {/* ── INCOME FORM ── */}
+          {addMode==="income"&&<>
+            <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:20,marginBottom:18}}>Add Income</div>
+            <div style={{marginBottom:16}}>
+              <div className="lbl">Amount</div>
+              <div style={{position:"relative"}}>
+                <span style={{position:"absolute",left:18,top:"50%",transform:"translateY(-50%)",fontSize:22,color:"#555",fontFamily:"'Syne',sans-serif",fontWeight:700}}>₹</span>
+                <input className="ai" style={{borderColor:"#2A2A38"}} type="number" placeholder="0" value={incAmt} onChange={e=>setIncAmt(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleSaveIncome()} autoFocus/>
+              </div>
+            </div>
+            <div style={{marginBottom:16}}>
+              <div className="lbl">Type</div>
+              <div style={{display:"flex",gap:8}}>
+                {[["Monthly Salary","💼 Monthly Salary"],["Bonus / Other","🎁 Bonus / Other"]].map(([val,label])=>(
+                  <button key={val} className={`pay-btn ${incType===val?"on":""}`} style={{"--ac":"#5AE8A0"}} onClick={()=>setIncType(val)}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:24}}>
+              <div><div className="lbl">Note (optional)</div><input className="ti" placeholder="e.g. April salary" value={incNote} onChange={e=>setIncNote(e.target.value)}/></div>
+              <div><div className="lbl">Date</div><input className="di" type="date" value={incDt} onChange={e=>setIncDt(e.target.value)}/></div>
+            </div>
+            <button className={`ib ${incSaved?"ok":""}`} onClick={handleSaveIncome}>{incSaved?"✓ Saved!":"Save Income"}</button>
+          </>}
         </>}
 
         {/* ── HISTORY ── */}
@@ -567,7 +740,7 @@ function App() {
             ?<div className="card" style={{textAlign:"center",padding:40,color:"#555"}}><div style={{fontSize:32,marginBottom:8}}>📭</div>No results</div>
             :<div className="card">
               {hist.slice(0,80).map(e=>(
-                <div key={e.id} className="er" style={{opacity:e.reconciled?.45:1}}>
+                <div key={e.id} className="er" style={{opacity:e.reconciled?0.45:1}}>
                   <div style={{width:34,height:34,borderRadius:10,background:`${CATEGORIES[e.category]?.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{CATEGORIES[e.category]?.icon}</div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:13,fontWeight:500,textDecoration:e.reconciled?"line-through":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
@@ -592,26 +765,21 @@ function App() {
 
         {/* ── RECONCILE ── */}
         {view==="reconcile"&&(()=>{
-          // Only CC expenses need reconciliation
-          const ccExpenses = expenses.filter(e=>e.payment==="CC"||!e.payment);
-          const unv = ccExpenses.filter(e=>!e.reconciled);
-          const vd  = ccExpenses.filter(e=>e.reconciled);
-          // Use CC amount for totals (full bill amount, not split share)
-          const unvTotal = unv.reduce((s,e)=>s+(e.ccAmount||e.amount),0);
-          const vdTotal  = vd.reduce((s,e)=>s+(e.ccAmount||e.amount),0);
+          const ccExp=expenses.filter(e=>e.payment==="CC"||!e.payment);
+          const unv=ccExp.filter(e=>!e.reconciled);
+          const vd=ccExp.filter(e=>e.reconciled);
           return <>
             <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:22,marginBottom:6}}>CC Reconciliation</div>
-            <div style={{fontSize:13,color:"#555",marginBottom:6}}>Only Credit Card entries shown · amounts are full CC bill values</div>
-            <div style={{fontSize:11,color:"#444",marginBottom:18}}>Split expenses show the full bill amount (e.g. ₹500) not your share (₹125)</div>
+            <div style={{fontSize:12,color:"#555",marginBottom:18}}>Only CC entries · amounts show full bill value</div>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:20}}>
               <div className="card" style={{textAlign:"center"}}>
                 <div style={{fontSize:11,color:"#E85A5A",letterSpacing:"1px",textTransform:"uppercase",marginBottom:6}}>Unverified</div>
-                <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:18}}>{fmt(unvTotal)}</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:18}}>{fmt(unv.reduce((s,e)=>s+(e.ccAmount||e.amount),0))}</div>
                 <div style={{fontSize:11,color:"#555",marginTop:3}}>{unv.length} entries</div>
               </div>
               <div className="card" style={{textAlign:"center"}}>
                 <div style={{fontSize:11,color:"#5AE8A0",letterSpacing:"1px",textTransform:"uppercase",marginBottom:6}}>Verified</div>
-                <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:18}}>{fmt(vdTotal)}</div>
+                <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:18}}>{fmt(vd.reduce((s,e)=>s+(e.ccAmount||e.amount),0))}</div>
                 <div style={{fontSize:11,color:"#555",marginTop:3}}>{vd.length} entries</div>
               </div>
             </div>
@@ -624,12 +792,11 @@ function App() {
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                       {e.subcategory}{e.note?` · ${e.note}`:""}
-                      {e.ccAmount>e.amount&&<span style={{marginLeft:6,fontSize:10,color:"#9B5AE8",background:"rgba(155,90,232,.12)",padding:"1px 6px",borderRadius:8}}>split · my share {fmt(e.amount)}</span>}
+                      {e.ccAmount>e.amount&&<span style={{marginLeft:6,fontSize:10,color:"#9B5AE8",background:"rgba(155,90,232,.12)",padding:"1px 6px",borderRadius:8}}>split · my {fmt(e.amount)}</span>}
                     </div>
                     <div style={{fontSize:11,color:"#555",marginTop:2}}>{e.date}</div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                    {/* Show CC amount (full bill) for reconciliation */}
                     <div style={{textAlign:"right"}}>
                       <div style={{fontSize:13,fontWeight:600,color:CATEGORIES[e.category]?.color}}>{fmt(e.ccAmount||e.amount)}</div>
                       {e.ccAmount>e.amount&&<div style={{fontSize:10,color:"#666"}}>CC bill</div>}
@@ -656,7 +823,6 @@ function App() {
     </div>
   );
 }
-
 ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
 </script>
 </body>
