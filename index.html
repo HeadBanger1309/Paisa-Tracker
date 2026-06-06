@@ -138,8 +138,9 @@ function App() {
   const [dt,      setDt]      = useState(getNow());
   const [saved,   setSaved]   = useState(false);
   const [payment, setPayment] = useState("CC");
-  const [isSplit, setIsSplit] = useState(false);
-  const [splitN,  setSplitN]  = useState(2);
+  const [isSplit,   setIsSplit]   = useState(false);
+  const [splitN,    setSplitN]    = useState(2);
+  const [isRefund,  setIsRefund]  = useState(false);
 
   // Income form
   const [incType, setIncType] = useState("Monthly Salary");
@@ -150,9 +151,11 @@ function App() {
 
   useEffect(()=>{ setSub(CATEGORIES[cat].sub[0]); },[cat]);
 
-  const fullAmt = parseFloat(amt)||0;
-  const myAmt   = isSplit&&splitN>1 ? Math.round(fullAmt/splitN*100)/100 : fullAmt;
-  const ccAmt   = payment==="CC" ? fullAmt : 0;
+  const fullAmt  = parseFloat(amt)||0;
+  const myAmt    = isRefund
+    ? -(isSplit&&splitN>1 ? Math.round(fullAmt/splitN*100)/100 : fullAmt)
+    :  (isSplit&&splitN>1 ? Math.round(fullAmt/splitN*100)/100 : fullAmt);
+  const ccAmt    = payment==="CC" ? (isRefund ? -fullAmt : fullAmt) : 0;
 
   // ── Load scripts ──────────────────────────────────────────────────────────
   useEffect(()=>{
@@ -247,7 +250,7 @@ function App() {
     const entry={id:Date.now(),date:dt,category:cat,subcategory:sub,amount:myAmt,
                  note:nte.trim(),reconciled:false,payment,ccAmount:ccAmt};
     setExpenses(p=>[entry,...p].sort((a,b)=>b.date.localeCompare(a.date)));
-    setAmt(""); setNte(""); setDt(getNow()); setIsSplit(false); setSplitN(2);
+    setAmt(""); setNte(""); setDt(getNow()); setIsSplit(false); setSplitN(2); setIsRefund(false);
     setSaved(true); setTimeout(()=>setSaved(false),1200);
     try{
       await gapi.client.sheets.spreadsheets.values.append({
@@ -680,6 +683,22 @@ function App() {
                 </div>
               )}
             </div>
+            {/* Refund toggle */}
+            <div style={{marginBottom:16}}>
+              <div className="toggle-row" style={{borderColor:isRefund?"#E85A5A":"#2A2A38",background:isRefund?"color-mix(in srgb,#E85A5A 6%,#1A1A24)":"#1A1A24"}}>
+                <div>
+                  <div style={{fontSize:13,fontWeight:500,color:isRefund?"#E85A5A":"#F0EDE6"}}>↩ Refund</div>
+                  <div style={{fontSize:11,color:"#555",marginTop:2}}>Amount will be saved as negative — reduces category spend</div>
+                </div>
+                <button className={`toggle ${isRefund?"on":"off"}`} style={isRefund?{background:"#E85A5A"}:{}} onClick={()=>setIsRefund(p=>!p)}/>
+              </div>
+              {isRefund&&fullAmt>0&&(
+                <div style={{marginTop:8,background:"rgba(232,90,90,.08)",border:"1px solid rgba(232,90,90,.2)",borderRadius:10,padding:"8px 14px",fontSize:12,color:"#E85A5A"}}>
+                  This will record −{fmt(Math.abs(myAmt))} · reducing spend in the selected category
+                </div>
+              )}
+            </div>
+
             <div style={{marginBottom:16}}>
               <div className="lbl">Category</div>
               <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -745,7 +764,8 @@ function App() {
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:13,fontWeight:500,textDecoration:e.reconciled?"line-through":"none",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                       {e.subcategory}{e.note?` · ${e.note}`:""}
-                      {e.ccAmount>e.amount&&<span style={{marginLeft:6,fontSize:10,color:"#9B5AE8",background:"rgba(155,90,232,.12)",padding:"1px 6px",borderRadius:8}}>split</span>}
+                      {e.amount<0&&<span style={{marginLeft:6,fontSize:10,color:"#E85A5A",background:"rgba(232,90,90,.12)",padding:"1px 6px",borderRadius:8}}>refund</span>}
+                      {e.ccAmount>Math.abs(e.amount)&&e.amount>0&&<span style={{marginLeft:6,fontSize:10,color:"#9B5AE8",background:"rgba(155,90,232,.12)",padding:"1px 6px",borderRadius:8}}>split</span>}
                     </div>
                     <div style={{fontSize:11,color:"#555",marginTop:2,display:"flex",gap:8}}>
                       <span>{e.category} · {e.date}</span>
@@ -753,7 +773,9 @@ function App() {
                     </div>
                   </div>
                   <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:CATEGORIES[e.category]?.color}}>{fmt(e.amount)}</div>
+                    <div style={{fontSize:13,fontWeight:600,color:e.amount<0?"#E85A5A":CATEGORIES[e.category]?.color}}>
+                      {e.amount<0?"↩ ":""}{fmt(Math.abs(e.amount))}
+                    </div>
                     <button onClick={()=>deleteExp(e)} style={{background:"none",border:"none",color:"#333",cursor:"pointer",fontSize:18,lineHeight:1,transition:"color .15s"}} onMouseEnter={ev=>ev.target.style.color="#E85A5A"} onMouseLeave={ev=>ev.target.style.color="#333"}>×</button>
                   </div>
                 </div>
