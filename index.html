@@ -43,16 +43,36 @@ const r2i = (row,i) => ({
 });
 const i2r = i => [i.date, i.type, i.amount, i.note];
 
-const CATEGORIES = {
+const DEFAULT_CATEGORIES = {
   "Food":      {icon:"🍽️",color:"#E8845A",sub:["Groceries","Eating Out","Food Delivery"]},
-  "Transport": {icon:"🚗",color:"#5A9BE8",sub:["Uber/Cab","Train/Metro","Flights"]},
-  "Lifestyle": {icon:"🧺",color:"#9B5AE8",sub:["Laundry","Shopping","Gifts","Entertainment","Subscriptions"]},
-  "Financial": {icon:"💰",color:"#5AE8A0",sub:["Insurance","EMI","Investments"]},
-  "Home":      {icon:"🏠",color:"#E8C45A",sub:["Rent","Maintenance","Electricity","Internet"]},
-  "Loans":     {icon:"🏦",color:"#E85A9B",sub:["Personal Loan","Education Loan","Lent Money"]},
-  "One Time":  {icon:"🛒",color:"#5AE8D4",sub:["Electronics","Furniture","Clothing","Other Purchase"]},
-  "Other":     {icon:"📦",color:"#E8D45A",sub:["Miscellaneous","Donation"]}
+  "Transport": {icon:"🚗",color:"#5A9BE8",sub:["Uber/Cab","Train/Metro","Flights","Petrol","Parking"]},
+  "Lifestyle": {icon:"🧺",color:"#9B5AE8",sub:["Laundry","Shopping","Gifts","Entertainment","Subscriptions","Personal Care","Fitness"]},
+  "Financial": {icon:"💰",color:"#5AE8A0",sub:["Insurance","EMI","Investments","Tax"]},
+  "Home":      {icon:"🏠",color:"#E8C45A",sub:["Rent","Maintenance","Electricity","Internet","Groceries (Home)","Repairs"]},
+  "Loans":     {icon:"🏦",color:"#E85A9B",sub:["Personal Loan","Education Loan","Lent Money","Credit Card Payment"]},
+  "One Time":  {icon:"🛒",color:"#5AE8D4",sub:["Electronics","Furniture","Clothing","Other Purchase","Medical"]},
+  "Other":     {icon:"📦",color:"#E8D45A",sub:["Miscellaneous","Donation","Refund"]}
 };
+
+// Merge saved custom subcategories from localStorage-like storage
+let CATEGORIES = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
+
+const SCHED_SHEET    = "Scheduled";
+const CONFIRMED_KEY  = "confirmed_months"; // stored in gapi sheet meta / local fallback
+
+const SCHEDULED_DEFAULTS = [
+  {id:1, name:"House Rent",        category:"Home",      subcategory:"Rent",           amount:40000, payment:"Cash"},
+  {id:2, name:"Bachraj Maintenance",category:"Home",      subcategory:"Maintenance",    amount:2952,  payment:"Cash"},
+  {id:3, name:"Maid",              category:"Home",      subcategory:"Maintenance",    amount:800,   payment:"Cash"},
+  {id:4, name:"Netflix",           category:"Lifestyle", subcategory:"Subscriptions",  amount:649,   payment:"CC"},
+  {id:5, name:"Spotify/YT Premium",category:"Lifestyle", subcategory:"Subscriptions",  amount:299,   payment:"CC"},
+  {id:6, name:"Google One",        category:"Lifestyle", subcategory:"Subscriptions",  amount:650,   payment:"CC"},
+  {id:7, name:"PPF",               category:"Financial", subcategory:"Investments",    amount:12500, payment:"Cash"},
+  {id:8, name:"SIP Motilal",       category:"Financial", subcategory:"Investments",    amount:10000, payment:"Cash"},
+  {id:9, name:"SIP Parag Parikh",  category:"Financial", subcategory:"Investments",    amount:10000, payment:"Cash"},
+  {id:10,name:"Tanishq Gold",      category:"Financial", subcategory:"Investments",    amount:5000,  payment:"CC"},
+  {id:11,name:"Education Loan EMI",category:"Loans",     subcategory:"Education Loan", amount:50000, payment:"Cash"},
+];
 
 const fmt    = n => "₹"+Number(n).toLocaleString("en-IN",{maximumFractionDigits:0});
 const getNow = () => new Date().toISOString().split("T")[0];
@@ -111,6 +131,7 @@ input,button{font-family:inherit}
 `;
 
 function App() {
+  const [cats,    setCats]    = useState(CATEGORIES);
   const [auth,    setAuth]    = useState("loading");
   const [authErr, setAuthErr] = useState("");
   const [gapiOk,  setGapiOk] = useState(false);
@@ -124,7 +145,21 @@ function App() {
   const [syncMsg,    setSyncMsg]    = useState("");
   const [dataLoaded, setDataLoaded] = useState(false);
 
-  const [view,    setView]    = useState("dashboard");
+  const [view,       setView]       = useState("dashboard");
+  const [scheduled,  setScheduled]  = useState(SCHEDULED_DEFAULTS);
+  const [showModal,  setShowModal]  = useState(false);
+  const [modalItems, setModalItems] = useState([]);
+  const [confirmedM, setConfirmedM] = useState(new Set());
+  // Settings state
+  const [newSubCat,  setNewSubCat]  = useState("");
+  const [newSubFor,  setNewSubFor]  = useState("Transport");
+  // New scheduled payment form
+  const [showAddSched, setShowAddSched] = useState(false);
+  const [schedName,    setSchedName]    = useState("");
+  const [schedCat,     setSchedCat]     = useState("Food");
+  const [schedSub,     setSchedSub]     = useState("Groceries");
+  const [schedAmt,     setSchedAmt]     = useState("");
+  const [schedPay,     setSchedPay]     = useState("CC");
   const [addMode, setAddMode] = useState("expense"); // "expense" | "income"
   const [range,   setRange]   = useState("month");
   const [tab,     setTab]     = useState("overview");
@@ -238,6 +273,44 @@ function App() {
       setExpenses((re.result.values||[]).map(r2e).filter(e=>e.amount>0).sort((a,b)=>b.date.localeCompare(a.date)));
       setIncomes((ri.result.values||[]).map(r2i).filter(i=>i.amount>0).sort((a,b)=>b.date.localeCompare(a.date)));
       setDataLoaded(true); flash("✓ Synced");
+      // Check if monthly confirmation needed
+      const now = new Date();
+      const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+      let confirmed = new Set();
+      try {
+        const stored = await window.storage.get("confirmed_months");
+        if (stored?.value) confirmed = new Set(JSON.parse(stored.value));
+      } catch {}
+      setConfirmedM(confirmed);
+      // Load custom subcategories
+      try {
+        const stored = await window.storage.get("custom_cats");
+        if (stored?.value) {
+          const custom = JSON.parse(stored.value);
+          const merged = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
+          for (const [cat, subs] of Object.entries(custom)) {
+            if (merged[cat]) {
+              subs.forEach(s => { if (!merged[cat].sub.includes(s)) merged[cat].sub.push(s); });
+            }
+          }
+          setCats(merged);
+          CATEGORIES = merged;
+        }
+      } catch {}
+      // Load scheduled payments
+      try {
+        const stored = await window.storage.get("scheduled_payments");
+        if (stored?.value) setScheduled(JSON.parse(stored.value));
+      } catch {}
+      if (!confirmed.has(monthKey)) {
+        // Build modal items from scheduled with last month amounts
+        const lastM = new Date(now.getFullYear(), now.getMonth()-1, 1);
+        const lastKey = lastM.toISOString().split("T")[0].slice(0,7);
+        setModalItems(
+          SCHEDULED_DEFAULTS.map(s => ({...s, confirm:true, editAmt:s.amount}))
+        );
+        setTimeout(()=>setShowModal(true), 800);
+      }
     } catch(e){ flash("⚠ "+(e.result?.error?.message||e.message||"Load error")); }
     finally{ setSyncing(false); }
   },[]);
@@ -245,6 +318,58 @@ function App() {
   const signIn=()=>{ setAuth("loading"); try{ tokenRef.current.requestAccessToken({prompt:"consent"}); } catch(e){ setAuth("error"); setAuthErr(String(e)); } };
 
   // ── Save expense ──────────────────────────────────────────────────────────
+  const confirmMonth = async () => {
+    const now = new Date();
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+    const date = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-01`;
+    const toAdd = modalItems.filter(i=>i.confirm && i.editAmt>0).map(i=>({
+      id: Date.now()+Math.random(),
+      date, category:i.category, subcategory:i.subcategory,
+      amount:Number(i.editAmt), note:i.name,
+      reconciled:false, payment:i.payment, ccAmount:i.payment==="CC"?Number(i.editAmt):0
+    }));
+    // Add to expenses
+    setExpenses(p=>[...toAdd,...p].sort((a,b)=>b.date.localeCompare(a.date)));
+    // Save to sheet
+    try {
+      if (toAdd.length>0) {
+        await gapi.client.sheets.spreadsheets.values.append({
+          spreadsheetId:SHEET_ID, range:`${EXP_SHEET}!A:H`,
+          valueInputOption:"RAW", insertDataOption:"INSERT_ROWS",
+          resource:{values:toAdd.map(e2r)}
+        });
+      }
+      const newConfirmed = new Set([...confirmedM, monthKey]);
+      setConfirmedM(newConfirmed);
+      await window.storage.set("confirmed_months", JSON.stringify([...newConfirmed]));
+      flash(`✓ ${toAdd.length} scheduled payments added`);
+    } catch { flash("⚠ Could not save to sheet"); }
+    setShowModal(false);
+  };
+
+  const saveScheduled = async (list) => {
+    setScheduled(list);
+    await window.storage.set("scheduled_payments", JSON.stringify(list)).catch(()=>{});
+  };
+
+  const addSubcategory = async (catName, subName) => {
+    if (!subName.trim() || !catName) return;
+    const updated = JSON.parse(JSON.stringify(cats));
+    if (!updated[catName].sub.includes(subName.trim())) {
+      updated[catName].sub.push(subName.trim());
+      setCats(updated);
+      CATEGORIES = updated;
+      // Persist custom subs
+      const custom = {};
+      for (const [c, info] of Object.entries(updated)) {
+        const defaults = DEFAULT_CATEGORIES[c]?.sub || [];
+        const extras = info.sub.filter(s=>!defaults.includes(s));
+        if (extras.length) custom[c] = extras;
+      }
+      await window.storage.set("custom_cats", JSON.stringify(custom)).catch(()=>{});
+    }
+  };
+
   const handleSaveExpense = async()=>{
     if(!amt||isNaN(amt)||fullAmt<=0) return;
     const entry={id:Date.now(),date:dt,category:cat,subcategory:sub,amount:myAmt,
@@ -710,8 +835,8 @@ function App() {
             <div style={{marginBottom:16}}>
               <div className="lbl">Subcategory</div>
               <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
-                {CATEGORIES[cat].sub.map(s=>(
-                  <button key={s} className={`sc ${sub===s?"on":""}`} style={{"--ac":CATEGORIES[cat].color}} onClick={()=>setSub(s)}>{s}</button>
+                {(cats[cat]?.sub||[]).map(s=>(
+                  <button key={s} className={`sc ${sub===s?"on":""}`} style={{"--ac":cats[cat]?.color}} onClick={()=>setSub(s)}>{s}</button>
                 ))}
               </div>
             </div>
@@ -830,7 +955,222 @@ function App() {
             </div>
           </>;
         })()}
+
+        {/* ── SETTINGS ── */}
+        {view==="settings"&&<>
+          <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:22,marginBottom:20}}>Settings</div>
+
+          {/* Add Subcategory */}
+          <div className="card" style={{marginBottom:16}}>
+            <div className="lbl" style={{marginBottom:12}}>Add Subcategory</div>
+            <div style={{marginBottom:10}}>
+              <div className="lbl">Category</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                {Object.entries(cats).map(([c,info])=>(
+                  <button key={c} className={`chip ${newSubFor===c?"on":""}`} style={{"--ac":info.color,padding:"8px 10px"}} onClick={()=>setNewSubFor(c)}>
+                    <span style={{fontSize:13}}>{info.icon}</span><span style={{fontSize:12}}>{c}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{display:"flex",gap:8,marginTop:12}}>
+              <input className="ti" placeholder="New subcategory name" value={newSubCat} onChange={e=>setNewSubCat(e.target.value)}
+                onKeyDown={e=>{ if(e.key==="Enter"&&newSubCat.trim()){ addSubcategory(newSubFor,newSubCat); setNewSubCat(""); }}}/>
+              <button onClick={()=>{ if(newSubCat.trim()){ addSubcategory(newSubFor,newSubCat); setNewSubCat(""); }}}
+                style={{background:"#E8845A",border:"none",borderRadius:10,color:"#0F0F13",fontWeight:700,fontSize:13,padding:"0 16px",cursor:"pointer",flexShrink:0}}>Add</button>
+            </div>
+            <div style={{marginTop:14}}>
+              {Object.entries(cats).map(([c,info])=>(
+                <div key={c} style={{marginBottom:8}}>
+                  <div style={{fontSize:11,color:info.color,letterSpacing:"1px",textTransform:"uppercase",marginBottom:4}}>{info.icon} {c}</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {info.sub.map(s=>{
+                      const isCustom = !DEFAULT_CATEGORIES[c]?.sub.includes(s);
+                      return (
+                        <div key={s} style={{display:"flex",alignItems:"center",gap:4,background:"#1A1A24",borderRadius:20,padding:"4px 10px 4px 10px",border:`1px solid ${isCustom?info.color+"44":"#2A2A38"}`}}>
+                          <span style={{fontSize:11,color:isCustom?info.color:"#888"}}>{s}</span>
+                          {isCustom&&<button onClick={async()=>{
+                            const updated=JSON.parse(JSON.stringify(cats));
+                            updated[c].sub=updated[c].sub.filter(x=>x!==s);
+                            setCats(updated); CATEGORIES=updated;
+                            const custom={};
+                            for(const[cat,inf]of Object.entries(updated)){
+                              const defs=DEFAULT_CATEGORIES[cat]?.sub||[];
+                              const extras=inf.sub.filter(x=>!defs.includes(x));
+                              if(extras.length)custom[cat]=extras;
+                            }
+                            await window.storage.set("custom_cats",JSON.stringify(custom)).catch(()=>{});
+                          }} style={{background:"none",border:"none",color:"#555",cursor:"pointer",fontSize:12,lineHeight:1,padding:0}}>×</button>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Scheduled Payments */}
+          <div className="card" style={{marginBottom:16}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div className="lbl" style={{marginBottom:0}}>Scheduled Payments</div>
+              <button onClick={()=>setShowAddSched(p=>!p)}
+                style={{background:"#E8845A",border:"none",borderRadius:8,color:"#0F0F13",fontWeight:700,fontSize:12,padding:"5px 12px",cursor:"pointer"}}>
+                {showAddSched?"Cancel":"+ Add"}
+              </button>
+            </div>
+
+            {showAddSched&&(
+              <div style={{background:"#1A1A24",borderRadius:12,padding:"14px",marginBottom:14,border:"1px solid #2A2A38"}}>
+                <div style={{marginBottom:10}}>
+                  <div className="lbl">Name</div>
+                  <input className="ti" placeholder="e.g. Amazon Prime" value={schedName} onChange={e=>setSchedName(e.target.value)}/>
+                </div>
+                <div style={{marginBottom:10}}>
+                  <div className="lbl">Category</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                    {Object.entries(cats).map(([c,info])=>(
+                      <button key={c} className={`chip ${schedCat===c?"on":""}`} style={{"--ac":info.color,padding:"7px 10px"}} onClick={()=>{setSchedCat(c);setSchedSub(info.sub[0]);}}>
+                        <span>{info.icon}</span><span style={{fontSize:12}}>{c}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{marginBottom:10}}>
+                  <div className="lbl">Subcategory</div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                    {cats[schedCat]?.sub.map(s=>(
+                      <button key={s} className={`sc ${schedSub===s?"on":""}`} style={{"--ac":cats[schedCat].color}} onClick={()=>setSchedSub(s)}>{s}</button>
+                    ))}
+                  </div>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+                  <div>
+                    <div className="lbl">Default Amount</div>
+                    <div style={{position:"relative"}}>
+                      <span style={{position:"absolute",left:10,top:"50%",transform:"translateY(-50%)",color:"#555",fontSize:14}}>₹</span>
+                      <input className="ti" style={{paddingLeft:24}} type="number" placeholder="0" value={schedAmt} onChange={e=>setSchedAmt(e.target.value)}/>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="lbl">Payment</div>
+                    <div style={{display:"flex",gap:6}}>
+                      {[["CC","💳"],["Cash","💵"]].map(([v,l])=>(
+                        <button key={v} className={`pay-btn ${schedPay===v?"on":""}`} style={{"--ac":v==="CC"?"#5A9BE8":"#5AE8A0",flex:1}} onClick={()=>setSchedPay(v)}>{l} {v}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+                <button onClick={async()=>{
+                  if(!schedName.trim()||!schedAmt) return;
+                  const newItem={id:Date.now(),name:schedName.trim(),category:schedCat,subcategory:schedSub,amount:Number(schedAmt),payment:schedPay};
+                  const updated=[...scheduled,newItem];
+                  await saveScheduled(updated);
+                  setSchedName(""); setSchedAmt(""); setShowAddSched(false);
+                  flash("✓ Scheduled payment added");
+                }} style={{width:"100%",background:"#5AE8A0",border:"none",borderRadius:10,color:"#0F0F13",fontWeight:700,fontSize:14,padding:12,cursor:"pointer"}}>
+                  Save Scheduled Payment
+                </button>
+              </div>
+            )}
+
+            {scheduled.map((s,i)=>(
+              <div key={s.id} className="er">
+                <div style={{width:34,height:34,borderRadius:10,background:`${cats[s.category]?.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{cats[s.category]?.icon}</div>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:500}}>{s.name}</div>
+                  <div style={{fontSize:11,color:"#555",marginTop:1}}>{s.subcategory} · <span style={{color:s.payment==="CC"?"#5A9BE8":"#5AE8A0"}}>{s.payment==="CC"?"💳 CC":"💵 Cash"}</span></div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
+                  <div style={{fontSize:13,fontWeight:600,color:cats[s.category]?.color}}>{fmt(s.amount)}</div>
+                  <button onClick={async()=>{ const updated=scheduled.filter((_,j)=>j!==i); await saveScheduled(updated); }}
+                    style={{background:"none",border:"none",color:"#333",cursor:"pointer",fontSize:16,transition:"color .15s"}}
+                    onMouseEnter={ev=>ev.target.style.color="#E85A5A"} onMouseLeave={ev=>ev.target.style.color="#333"}>×</button>
+                </div>
+              </div>
+            ))}
+
+            <button onClick={()=>{ setModalItems(scheduled.map(s=>({...s,confirm:true,editAmt:s.amount}))); setShowModal(true); }}
+              style={{width:"100%",marginTop:14,background:"#1E1E28",border:"1.5px solid #2A2A38",borderRadius:10,color:"#aaa",fontSize:13,fontWeight:500,padding:10,cursor:"pointer"}}>
+              📅 Preview this month's confirmation
+            </button>
+          </div>
+
+          {/* Re-trigger modal */}
+          <div className="card">
+            <div className="lbl" style={{marginBottom:8}}>Monthly Confirmation</div>
+            <div style={{fontSize:12,color:"#555",marginBottom:12}}>Already confirmed this month but need to re-run?</div>
+            <button onClick={async()=>{
+              const now=new Date();
+              const mk=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+              const nc=new Set([...confirmedM]);nc.delete(mk);
+              setConfirmedM(nc);
+              await window.storage.set("confirmed_months",JSON.stringify([...nc])).catch(()=>{});
+              setModalItems(scheduled.map(s=>({...s,confirm:true,editAmt:s.amount})));
+              setShowModal(true);
+              flash("Modal reset — re-confirming this month");
+            }} style={{width:"100%",background:"#1A1A24",border:"1.5px solid #2A2A38",borderRadius:10,color:"#aaa",fontSize:13,fontWeight:500,padding:10,cursor:"pointer"}}>
+              ↩ Re-confirm this month's payments
+            </button>
+          </div>
+        </>}
       </div>
+
+      {/* ── MONTHLY CONFIRMATION MODAL ── */}
+      {showModal&&(
+        <div style={{position:"fixed",inset:0,background:"rgba(0,0,0,.75)",zIndex:100,display:"flex",alignItems:"flex-end",justifyContent:"center"}} onClick={e=>{if(e.target===e.currentTarget)setShowModal(false)}}>
+          <div style={{background:"#16161E",borderRadius:"20px 20px 0 0",width:"100%",maxWidth:520,maxHeight:"85vh",overflow:"auto",padding:"24px 20px 40px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:20}}>Monthly Payments 📅</div>
+              <button onClick={()=>setShowModal(false)} style={{background:"none",border:"none",color:"#555",fontSize:22,cursor:"pointer"}}>×</button>
+            </div>
+            <div style={{fontSize:12,color:"#555",marginBottom:20}}>
+              {(()=>{const n=new Date();return `${MN[n.getMonth()]} ${n.getFullYear()}`;})()}  · Confirm and edit amounts before adding
+            </div>
+            {modalItems.map((item,i)=>(
+              <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 0",borderBottom:"1px solid #1A1A24"}}>
+                <button onClick={()=>setModalItems(p=>p.map((x,j)=>j===i?{...x,confirm:!x.confirm}:x))}
+                  style={{width:24,height:24,borderRadius:6,border:"1.5px solid",
+                    borderColor:item.confirm?"#5AE8A0":"#333",
+                    background:item.confirm?"rgba(90,232,160,.15)":"none",
+                    cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",
+                    color:"#5AE8A0",fontSize:14,flexShrink:0}}>
+                  {item.confirm?"✓":""}
+                </button>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:500,opacity:item.confirm?1:.4}}>{item.name}</div>
+                  <div style={{fontSize:11,color:"#555",marginTop:1}}>{item.category} · <span style={{color:item.payment==="CC"?"#5A9BE8":"#5AE8A0"}}>{item.payment==="CC"?"💳 CC":"💵 Cash"}</span></div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                  <span style={{fontSize:13,color:"#555"}}>₹</span>
+                  <input type="number" value={item.editAmt}
+                    onChange={e=>setModalItems(p=>p.map((x,j)=>j===i?{...x,editAmt:e.target.value}:x))}
+                    style={{background:"#1A1A24",border:"1.5px solid #2A2A38",borderRadius:8,
+                      color:item.confirm?"#F0EDE6":"#555",fontSize:14,fontWeight:600,
+                      padding:"6px 10px",width:90,outline:"none",textAlign:"right"}}/>
+                  <button onClick={()=>setModalItems(p=>p.map((x,j)=>j===i?{...x,payment:x.payment==="CC"?"Cash":"CC"}:x))}
+                    style={{background:"none",border:"1px solid #2A2A38",borderRadius:8,
+                      color:item.payment==="CC"?"#5A9BE8":"#5AE8A0",fontSize:11,padding:"4px 8px",cursor:"pointer"}}>
+                    {item.payment==="CC"?"💳":"💵"}
+                  </button>
+                </div>
+              </div>
+            ))}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:20}}>
+              <button onClick={()=>setShowModal(false)}
+                style={{background:"#1A1A24",border:"1.5px solid #2A2A38",borderRadius:12,
+                  color:"#888",fontSize:14,fontWeight:600,padding:14,cursor:"pointer"}}>
+                Skip this month
+              </button>
+              <button onClick={confirmMonth}
+                style={{background:"#5AE8A0",border:"none",borderRadius:12,
+                  color:"#0F0F13",fontSize:14,fontWeight:700,fontFamily:"'Syne',sans-serif",padding:14,cursor:"pointer"}}>
+                ✓ Add {modalItems.filter(i=>i.confirm).length} payments
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Nav */}
       <div style={{position:"fixed",bottom:0,left:0,right:0,background:"#0F0F13",borderTop:"1px solid #1A1A22",padding:"6px 0 max(14px,env(safe-area-inset-bottom))"}}>
@@ -839,7 +1179,7 @@ function App() {
           <button className={`nav ${view==="history"?"on":""}`}   onClick={()=>setView("history")}><span className="ic">≡</span>History</button>
           <button onClick={()=>setView("add")} style={{background:"#E8845A",border:"none",borderRadius:"50%",width:52,height:52,fontSize:28,color:"#0F0F13",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",marginTop:-12,boxShadow:"0 4px 20px rgba(232,132,90,.4)",transition:"transform .15s",flexShrink:0}} onMouseEnter={e=>e.currentTarget.style.transform="scale(1.08)"} onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>+</button>
           <button className={`nav ${view==="reconcile"?"on":""}`} onClick={()=>setView("reconcile")}><span className="ic">◈</span>Verify</button>
-          <button className="nav" style={{opacity:0,pointerEvents:"none"}}><span className="ic">·</span></button>
+          <button className={`nav ${view==="settings"?"on":""}`} onClick={()=>setView("settings")}><span className="ic">⚙</span>Settings</button>
         </div>
       </div>
     </div>
