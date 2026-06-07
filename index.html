@@ -163,7 +163,9 @@ function App() {
   const [addMode, setAddMode] = useState("expense"); // "expense" | "income"
   const [range,   setRange]   = useState("month");
   const [tab,     setTab]     = useState("overview");
-  const [srch,    setSrch]    = useState("");
+  const [srch,      setSrch]      = useState("");
+  const [anlCat,    setAnlCat]    = useState(null); // selected category for drill-down
+  const [anlView,   setAnlView]   = useState("trends"); // "trends"|"drilldown"|"savings" 
 
   // Expense form
   const [cat,     setCat]     = useState("Food");
@@ -589,26 +591,31 @@ function App() {
           {dataLoaded&&tab==="overview"&&(filtered.length===0
             ?<div className="card" style={{textAlign:"center",padding:40,color:"#555"}}><div style={{fontSize:32,marginBottom:8}}>🌱</div>No expenses this period</div>
             :<>
-              <div className="card" style={{marginBottom:16}}>
-                <div className="lbl">By Category</div>
-                <div style={{display:"flex",alignItems:"center",gap:16}}>
-                  <ResponsiveContainer width={130} height={130}>
-                    <PieChart><Pie data={byCat} cx="50%" cy="50%" innerRadius={36} outerRadius={56} dataKey="value" paddingAngle={3}>
-                      {byCat.map((e,i)=><Cell key={i} fill={e.color}/>)}
-                    </Pie></PieChart>
-                  </ResponsiveContainer>
-                  <div style={{flex:1,display:"flex",flexDirection:"column",gap:6}}>
-                    {byCat.map((c,i)=>(
-                      <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
-                        <div style={{display:"flex",alignItems:"center",gap:6}}>
-                          <div style={{width:7,height:7,borderRadius:"50%",background:c.color,flexShrink:0}}/>
-                          <span style={{fontSize:11,color:"#aaa"}}>{CATEGORIES[c.name]?.icon} {c.name}</span>
-                        </div>
-                        <span style={{fontSize:11,fontWeight:600}}>{fmt(c.value)}</span>
+              {/* Category trend cards */}
+              <div style={{marginBottom:16}}>
+                <div className="lbl">Category Trends · This Month</div>
+                {catAnalytics.filter(a=>a.m1>0||a.a3>0).map((a,i)=>(
+                  <div key={i} onClick={()=>{setAnlCat(a.cat);setAnlView("drilldown");setView("analytics");}}
+                    style={{display:"flex",alignItems:"center",gap:10,padding:"11px 0",borderBottom:"1px solid #1A1A24",cursor:"pointer"}}>
+                    <div style={{width:34,height:34,borderRadius:10,background:`${cats[a.cat]?.color}18`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:15,flexShrink:0}}>{cats[a.cat]?.icon}</div>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:3}}>
+                        <span style={{fontSize:13,fontWeight:600}}>{a.cat}</span>
+                        <span style={{fontSize:11,fontWeight:700,color:a.tColor}}>
+                          {a.trend==="up"?"↑":a.trend==="down"?"↓":"→"} {a.pct!==0?`${Math.abs(a.pct)}%`:""}
+                        </span>
                       </div>
-                    ))}
+                      <div style={{display:"flex",gap:10}}>
+                        <span style={{fontSize:10,color:"#555"}}>3M avg: <span style={{color:"#888"}}>{fmt(a.a3)}</span></span>
+                        <span style={{fontSize:10,color:"#555"}}>6M avg: <span style={{color:"#888"}}>{fmt(a.a6)}</span></span>
+                      </div>
+                    </div>
+                    <div style={{textAlign:"right",flexShrink:0}}>
+                      <div style={{fontSize:14,fontWeight:700,color:a.tColor}}>{fmt(a.m1)}</div>
+                      <div style={{fontSize:10,color:"#444",marginTop:2}}>this month</div>
+                    </div>
                   </div>
-                </div>
+                ))}
               </div>
               <div className="card">
                 <div className="lbl">Recent</div>
@@ -956,6 +963,239 @@ function App() {
           </>;
         })()}
 
+        {/* ── ANALYTICS ── */}
+        {view==="analytics"&&<>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16}}>
+            <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:22}}>Analytics 📊</div>
+          </div>
+
+          {/* Sub-nav */}
+          <div style={{display:"flex",gap:4,marginBottom:20,background:"#13131A",borderRadius:24,padding:4}}>
+            {[["trends","Trends"],["drilldown","Deep Dive"],["savings","Savings"]].map(([v,l])=>(
+              <button key={v} className={`tab ${anlView===v?"on":""}`} style={{flex:1,textAlign:"center",fontSize:12}} onClick={()=>setAnlView(v)}>{l}</button>
+            ))}
+          </div>
+
+          {/* ── TRENDS view ── */}
+          {anlView==="trends"&&<>
+            <div className="card" style={{marginBottom:16}}>
+              <div className="lbl" style={{marginBottom:12}}>Category Comparison · 1M / 3M avg / 6M avg</div>
+              {catAnalytics.filter(a=>a.a6>0||a.m1>0).map((a,i)=>(
+                <div key={i} style={{padding:"12px 0",borderBottom:"1px solid #1A1A24",cursor:"pointer"}}
+                  onClick={()=>{setAnlCat(a.cat);setAnlView("drilldown");}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:8}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <span style={{fontSize:16}}>{cats[a.cat]?.icon}</span>
+                      <span style={{fontSize:13,fontWeight:600}}>{a.cat}</span>
+                      <span style={{fontSize:11,fontWeight:700,color:a.tColor,background:`${a.tColor}15`,padding:"2px 8px",borderRadius:10}}>
+                        {a.trend==="up"?"↑ ":a.trend==="down"?"↓ ":"→ "}{Math.abs(a.pct)}% vs 3M
+                      </span>
+                    </div>
+                    <span style={{fontSize:11,color:"#555"}}>tap to drill →</span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:4}}>
+                    {[["This month",a.m1,a.tColor],["3M avg",a.a3,"#888"],["6M avg",a.a6,"#666"]].map(([lbl,val,col])=>(
+                      <div key={lbl} style={{background:"#13131A",borderRadius:8,padding:"8px 10px",textAlign:"center"}}>
+                        <div style={{fontSize:9,color:"#555",letterSpacing:"0.8px",textTransform:"uppercase",marginBottom:3}}>{lbl}</div>
+                        <div style={{fontSize:13,fontWeight:700,color:col}}>{fmt(val)}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {a.insight&&<div style={{marginTop:8,fontSize:11,color:a.tColor,background:`${a.tColor}0D`,borderRadius:8,padding:"6px 10px"}}>{a.insight}</div>}
+                </div>
+              ))}
+            </div>
+          </>}
+
+          {/* ── DRILLDOWN view ── */}
+          {anlView==="drilldown"&&<>
+            {/* Category selector */}
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:16}}>
+              {Object.keys(cats).map(c=>(
+                <button key={c} onClick={()=>setAnlCat(c)}
+                  style={{padding:"5px 12px",border:`1.5px solid ${anlCat===c?cats[c]?.color:"#2A2A38"}`,
+                    borderRadius:20,background:anlCat===c?`${cats[c]?.color}15`:"none",
+                    color:anlCat===c?cats[c]?.color:"#888",fontSize:12,fontWeight:500,cursor:"pointer"}}>
+                  {cats[c]?.icon} {c}
+                </button>
+              ))}
+            </div>
+
+            {anlCat&&(()=>{
+              const a = catAnalytics.find(x=>x.cat===anlCat);
+              if (!a) return null;
+              const col = cats[anlCat]?.color||"#888";
+              return <>
+                {/* Header */}
+                <div className="card" style={{marginBottom:12,background:`color-mix(in srgb,${col} 6%,#16161E)`}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                    <div>
+                      <div style={{fontSize:11,color:col,letterSpacing:"1px",textTransform:"uppercase",marginBottom:4}}>{cats[anlCat]?.icon} {anlCat}</div>
+                      <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:32,color:col}}>{fmt(a.m1)}</div>
+                      <div style={{fontSize:12,color:"#555",marginTop:4}}>this month</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:11,color:a.tColor,fontWeight:700,marginBottom:4}}>
+                        {a.trend==="up"?"↑":a.trend==="down"?"↓":"→"} {Math.abs(a.pct)}% vs 3M avg
+                      </div>
+                      <div style={{fontSize:11,color:"#555"}}>3M: {fmt(a.a3)}</div>
+                      <div style={{fontSize:11,color:"#555"}}>6M: {fmt(a.a6)}</div>
+                      {a.pctOfInc>0&&<div style={{fontSize:11,color:"#888",marginTop:4}}>{a.pctOfInc}% of income</div>}
+                    </div>
+                  </div>
+                </div>
+
+                {/* 12-month line chart */}
+                <div className="card" style={{marginBottom:12}}>
+                  <div className="lbl">12-Month Trend</div>
+                  <ResponsiveContainer width="100%" height={150}>
+                    <LineChart data={a.history}>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#1E1E2A"/>
+                      <XAxis dataKey="label" tick={{fill:"#555",fontSize:9}} tickLine={false} axisLine={false} interval={2}/>
+                      <YAxis hide/>
+                      <Tooltip content={({active,payload,label})=>active&&payload?.length?<div className="tt"><div style={{color:"#888",marginBottom:2}}>{label}</div><div style={{color:col}}>{fmt(payload[0].value)}</div></div>:null}/>
+                      <Line type="monotone" dataKey="value" stroke={col} strokeWidth={2} dot={false} activeDot={{r:4,fill:col}}/>
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Best / worst / avg */}
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+                  {[
+                    ["Best month",a.best?`${MN[parseInt(a.best.split("-")[1])-1]} '${a.best.slice(2,4)}`:"—",fmt(a.best?(catAnalytics.find(x=>x.cat===anlCat)?.history.find(h=>h.label.includes(MN[parseInt(a.best.split("-")[1])-1]))?.value||0):0),"#5AE8A0"],
+                    ["6M avg","",""+fmt(a.a6),"#888"],
+                    ["Worst month",a.worst?`${MN[parseInt(a.worst.split("-")[1])-1]} '${a.worst.slice(2,4)}`:"—",fmt(a.worst?(catAnalytics.find(x=>x.cat===anlCat)?.history.find(h=>h.label.includes(MN[parseInt(a.worst.split("-")[1])-1]))?.value||0):0),"#E85A5A"],
+                  ].map(([lbl,sub,val,col2],i)=>(
+                    <div key={i} className="card" style={{textAlign:"center",padding:"12px 8px"}}>
+                      <div style={{fontSize:9,color:"#555",textTransform:"uppercase",letterSpacing:"0.8px",marginBottom:4}}>{lbl}</div>
+                      {sub&&<div style={{fontSize:10,color:"#666",marginBottom:3}}>{sub}</div>}
+                      <div style={{fontSize:13,fontWeight:700,color:col2}}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Subcategory breakdown */}
+                {a.subBreakdown.length>0&&<div className="card">
+                  <div className="lbl">This Month by Subcategory</div>
+                  {a.subBreakdown.map((s,i)=>(
+                    <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",borderBottom:i<a.subBreakdown.length-1?"1px solid #1A1A24":"none"}}>
+                      <div style={{flex:1}}>
+                        <div style={{fontSize:13,fontWeight:500}}>{s.name}</div>
+                        <div style={{height:4,background:"#1A1A24",borderRadius:2,marginTop:4,overflow:"hidden"}}>
+                          <div style={{height:"100%",width:`${Math.round(s.value/a.m1*100)}%`,background:col,borderRadius:2,transition:"width .3s"}}/>
+                        </div>
+                      </div>
+                      <div style={{textAlign:"right",marginLeft:12,flexShrink:0}}>
+                        <div style={{fontSize:13,fontWeight:600,color:col}}>{fmt(s.value)}</div>
+                        <div style={{fontSize:10,color:"#555"}}>{Math.round(s.value/a.m1*100)}%</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>}
+
+                {a.insight&&<div style={{marginTop:12,background:`${a.tColor}0D`,border:`1px solid ${a.tColor}33`,borderRadius:12,padding:"12px 14px",fontSize:12,color:a.tColor}}>{a.insight}</div>}
+              </>;
+            })()}
+
+            {!anlCat&&<div className="card" style={{textAlign:"center",padding:40,color:"#555"}}>
+              <div style={{fontSize:32,marginBottom:8}}>👆</div>Tap a category above to explore
+            </div>}
+          </>}
+
+          {/* ── SAVINGS view ── */}
+          {anlView==="savings"&&<>
+            {/* Savings rate summary cards */}
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:16}}>
+              {(()=>{
+                const last3rates = savingsRate.filter(m=>m.inc>0).slice(-4,-1);
+                const avg3rate = last3rates.length ? Math.round(last3rates.reduce((s,m)=>s+m.rate,0)/last3rates.length) : 0;
+                const thisMonth = savingsRate.find(m=>m.label===`${MN[new Date().getMonth()]} ${new Date().getFullYear().toString().slice(2)}`);
+                return [
+                  ["Avg savings rate","3M rolling",`${avg3rate}%`,avg3rate>20?"#5AE8A0":avg3rate>0?"#E8C45A":"#E85A5A"],
+                  ["This month",thisMonth?.inc>0?`${thisMonth.rate}% of income`:"No income logged",thisMonth?fmt(thisMonth.savings):fmt(0),(thisMonth?.savings||0)>=0?"#5AE8A0":"#E85A5A"],
+                ].map(([title,sub,val,col],i)=>(
+                  <div key={i} className="card" style={{textAlign:"center"}}>
+                    <div style={{fontSize:10,color:"#555",textTransform:"uppercase",letterSpacing:"0.8px",marginBottom:4}}>{title}</div>
+                    <div style={{fontSize:11,color:"#666",marginBottom:6}}>{sub}</div>
+                    <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:22,color:col}}>{val}</div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {/* Savings rate bar chart */}
+            <div className="card" style={{marginBottom:16}}>
+              <div className="lbl">Monthly Savings Rate %</div>
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={savingsRate.filter(m=>m.inc>0)} barSize={16}>
+                  <XAxis dataKey="label" tick={{fill:"#888",fontSize:10}} tickLine={false} axisLine={false}/>
+                  <YAxis hide/>
+                  <ReferenceLine y={0} stroke="#333" strokeDasharray="3 3"/>
+                  <Tooltip content={({active,payload,label})=>active&&payload?.length?<div className="tt"><div style={{color:"#888",marginBottom:2}}>{label}</div><div style={{color:payload[0].value>=0?"#5AE8A0":"#E85A5A"}}>{payload[0].value}% savings rate</div><div style={{color:"#888",marginTop:2}}>Saved: {fmt(payload[0].payload.savings)}</div></div>:null}/>
+                  <Bar dataKey="rate" radius={[4,4,0,0]}>
+                    {savingsRate.filter(m=>m.inc>0).map((m,i)=><Cell key={i} fill={m.rate>=0?"#5AE8A0":"#E85A5A"}/>)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+
+            {/* Opportunity insights */}
+            <div className="card" style={{marginBottom:16}}>
+              <div className="lbl" style={{marginBottom:12}}>Opportunities</div>
+              {(()=>{
+                const insights = catAnalytics
+                  .filter(a=>a.trend==="up"&&a.a6>1000&&a.m1>a.a6)
+                  .sort((a,b)=>(b.m1-b.a6)-(a.m1-a.a6))
+                  .slice(0,4);
+                if (!insights.length) return <div style={{fontSize:13,color:"#555",textAlign:"center",padding:"16px 0"}}>🎉 All categories within 3M average!</div>;
+                return insights.map((a,i)=>(
+                  <div key={i} style={{padding:"10px 0",borderBottom:i<insights.length-1?"1px solid #1A1A24":"none"}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:4}}>
+                      <div style={{display:"flex",alignItems:"center",gap:6}}>
+                        <span>{cats[a.cat]?.icon}</span>
+                        <span style={{fontSize:13,fontWeight:500}}>{a.cat}</span>
+                        <span style={{fontSize:10,color:"#E85A5A",background:"rgba(232,90,90,.1)",padding:"1px 6px",borderRadius:8}}>↑ {a.pct}%</span>
+                      </div>
+                      <span style={{fontSize:13,fontWeight:700,color:"#5AE8A0"}}>save {fmt(Math.round(a.m1-a.a6))}</span>
+                    </div>
+                    <div style={{fontSize:11,color:"#555"}}>
+                      This month {fmt(a.m1)} vs 6M avg {fmt(a.a6)} · bringing it back saves {fmt(Math.round(a.m1-a.a6))}/mo
+                    </div>
+                  </div>
+                ));
+              })()}
+            </div>
+
+            {/* Month by month table */}
+            <div className="card">
+              <div className="lbl">Month by Month</div>
+              {savingsRate.slice().reverse().map((m,i)=>(
+                <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"8px 0",borderBottom:i<savingsRate.length-1?"1px solid #1A1A24":"none"}}>
+                  <div style={{fontSize:13,fontWeight:500,minWidth:60}}>{m.label}</div>
+                  <div style={{display:"flex",gap:12,alignItems:"center"}}>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:9,color:"#5AE8A0",textTransform:"uppercase"}}>In</div>
+                      <div style={{fontSize:12,fontWeight:600,color:"#5AE8A0"}}>{fmt(m.inc)}</div>
+                    </div>
+                    <div style={{textAlign:"right"}}>
+                      <div style={{fontSize:9,color:"#E8845A",textTransform:"uppercase"}}>Out</div>
+                      <div style={{fontSize:12,fontWeight:600,color:"#E8845A"}}>{fmt(m.exp)}</div>
+                    </div>
+                    <div style={{textAlign:"right",minWidth:64}}>
+                      <div style={{fontSize:9,color:m.savings>=0?"#5AE8A0":"#E85A5A",textTransform:"uppercase"}}>Saved</div>
+                      <div style={{fontSize:12,fontWeight:700,color:m.savings>=0?"#5AE8A0":"#E85A5A"}}>{fmt(m.savings)}</div>
+                    </div>
+                    <div style={{textAlign:"right",minWidth:36}}>
+                      <div style={{fontSize:9,color:"#555",textTransform:"uppercase"}}>Rate</div>
+                      <div style={{fontSize:12,fontWeight:600,color:m.rate>=20?"#5AE8A0":m.rate>=0?"#E8C45A":"#E85A5A"}}>{m.inc>0?`${m.rate}%`:"—"}</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </>}
+        </>}
+
         {/* ── SETTINGS ── */}
         {view==="settings"&&<>
           <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:22,marginBottom:20}}>Settings</div>
@@ -1179,6 +1419,7 @@ function App() {
           <button className={`nav ${view==="history"?"on":""}`}   onClick={()=>setView("history")}><span className="ic">≡</span>History</button>
           <button onClick={()=>setView("add")} style={{background:"#E8845A",border:"none",borderRadius:"50%",width:52,height:52,fontSize:28,color:"#0F0F13",fontWeight:700,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",marginTop:-12,boxShadow:"0 4px 20px rgba(232,132,90,.4)",transition:"transform .15s",flexShrink:0}} onMouseEnter={e=>e.currentTarget.style.transform="scale(1.08)"} onMouseLeave={e=>e.currentTarget.style.transform="scale(1)"}>+</button>
           <button className={`nav ${view==="reconcile"?"on":""}`} onClick={()=>setView("reconcile")}><span className="ic">◈</span>Verify</button>
+          <button className={`nav ${view==="analytics"?"on":""}`} onClick={()=>{setView("analytics");setAnlView("trends");}}><span className="ic">📊</span>Analytics</button>
           <button className={`nav ${view==="settings"?"on":""}`} onClick={()=>setView("settings")}><span className="ic">⚙</span>Settings</button>
         </div>
       </div>
