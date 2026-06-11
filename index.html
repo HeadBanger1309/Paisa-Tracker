@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0"/>
-  <title>paisa.</title>
+  <title>Kaha gaya mera Paisa!! · by hardik mall</title>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
   <script src="https://unpkg.com/@babel/standalone@7.23.5/babel.min.js"></script>
@@ -177,7 +177,8 @@ function App() {
   const [payment, setPayment] = useState("CC");
   const [isSplit,   setIsSplit]   = useState(false);
   const [splitN,    setSplitN]    = useState(2);
-  const [isRefund,  setIsRefund]  = useState(false);
+  const [isRefund,   setIsRefund]   = useState(false);
+  const [editingExp, setEditingExp] = useState(null); // expense being edited
 
   // Income form
   const [incType, setIncType] = useState("Monthly Salary");
@@ -278,12 +279,6 @@ function App() {
       // Check if monthly confirmation needed
       const now = new Date();
       const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-      let confirmed = new Set();
-      try {
-        const stored = await window.storage.get("confirmed_months");
-        if (stored?.value) confirmed = new Set(JSON.parse(stored.value));
-      } catch {}
-      setConfirmedM(confirmed);
       // Load custom subcategories
       try {
         const stored = await window.storage.get("custom_cats");
@@ -304,14 +299,24 @@ function App() {
         const stored = await window.storage.get("scheduled_payments");
         if (stored?.value) setScheduled(JSON.parse(stored.value));
       } catch {}
-      if (!confirmed.has(monthKey)) {
-        // Build modal items from scheduled with last month amounts
-        const lastM = new Date(now.getFullYear(), now.getMonth()-1, 1);
-        const lastKey = lastM.toISOString().split("T")[0].slice(0,7);
-        setModalItems(
-          SCHEDULED_DEFAULTS.map(s => ({...s, confirm:true, editAmt:s.amount}))
-        );
-        setTimeout(()=>setShowModal(true), 800);
+      // Load confirmed/skipped months
+      let confirmedSet = new Set();
+      try {
+        const stored = await window.storage.get("confirmed_months");
+        if (stored?.value) confirmedSet = new Set(JSON.parse(stored.value));
+      } catch {}
+      setConfirmedM(confirmedSet);
+      // Show modal only if this month is neither confirmed nor skipped
+      const isConfirmed = confirmedSet.has(`confirmed:${monthKey}`);
+      const isSkipped   = confirmedSet.has(`skipped:${monthKey}`);
+      if (!isConfirmed && !isSkipped) {
+        let sched = SCHEDULED_DEFAULTS;
+        try {
+          const stored = await window.storage.get("scheduled_payments");
+          if (stored?.value) sched = JSON.parse(stored.value);
+        } catch {}
+        setModalItems(sched.map(s => ({...s, confirm:true, editAmt:s.amount})));
+        setTimeout(()=>setShowModal(true), 900);
       }
     } catch(e){ flash("⚠ "+(e.result?.error?.message||e.message||"Load error")); }
     finally{ setSyncing(false); }
@@ -330,9 +335,7 @@ function App() {
       amount:Number(i.editAmt), note:i.name,
       reconciled:false, payment:i.payment, ccAmount:i.payment==="CC"?Number(i.editAmt):0
     }));
-    // Add to expenses
     setExpenses(p=>[...toAdd,...p].sort((a,b)=>b.date.localeCompare(a.date)));
-    // Save to sheet
     try {
       if (toAdd.length>0) {
         await gapi.client.sheets.spreadsheets.values.append({
@@ -341,7 +344,8 @@ function App() {
           resource:{values:toAdd.map(e2r)}
         });
       }
-      const newConfirmed = new Set([...confirmedM, monthKey]);
+      // Mark as confirmed for this month
+      const newConfirmed = new Set([...confirmedM, `confirmed:${monthKey}`]);
       setConfirmedM(newConfirmed);
       await window.storage.set("confirmed_months", JSON.stringify([...newConfirmed]));
       flash(`✓ ${toAdd.length} scheduled payments added`);
@@ -372,21 +376,73 @@ function App() {
     }
   };
 
+  // Start editing an expense — pre-fill Add form
+  const startEdit = (e) => {
+    setEditingExp(e);
+    setAmt(String(Math.abs(e.amount)));
+    setNte(e.note);
+    setDt(e.date);
+    setPayment(e.payment||"CC");
+    setCat(e.category);
+    setSub(e.subcategory);
+    setIsRefund(e.amount < 0);
+    if (e.ccAmount && e.ccAmount !== Math.abs(e.amount) && e.ccAmount > 0) {
+      setIsSplit(true);
+      // Reverse-engineer split count (closest integer)
+      const n = Math.round(e.ccAmount / Math.abs(e.amount));
+      setSplitN(n > 1 ? n : 2);
+    } else {
+      setIsSplit(false); setSplitN(2);
+    }
+    setAddMode("expense");
+    setView("add");
+    window.scrollTo(0,0);
+  };
+
   const handleSaveExpense = async()=>{
     if(!amt||isNaN(amt)||fullAmt<=0) return;
-    const entry={id:Date.now(),date:dt,category:cat,subcategory:sub,amount:myAmt,
-                 note:nte.trim(),reconciled:false,payment,ccAmount:ccAmt};
-    setExpenses(p=>[entry,...p].sort((a,b)=>b.date.localeCompare(a.date)));
-    setAmt(""); setNte(""); setDt(getNow()); setIsSplit(false); setSplitN(2); setIsRefund(false);
+    const isEdit = !!editingExp;
+    const entry = {
+      id: isEdit ? editingExp.id : Date.now(),
+      date:dt, category:cat, subcategory:sub, amount:myAmt,
+      note:nte.trim(), reconciled: isEdit ? editingExp.reconciled : false,
+      payment, ccAmount:ccAmt
+    };
+    if (isEdit) {
+      setExpenses(p=>p.map(x=>x.id===editingExp.id?entry:x).sort((a,b)=>b.date.localeCompare(a.date)));
+    } else {
+      setExpenses(p=>[entry,...p].sort((a,b)=>b.date.localeCompare(a.date)));
+    }
+    setAmt(""); setNte(""); setDt(getNow()); setIsSplit(false); setSplitN(2);
+    setIsRefund(false); setEditingExp(null);
     setSaved(true); setTimeout(()=>setSaved(false),1200);
     try{
-      await gapi.client.sheets.spreadsheets.values.append({
-        spreadsheetId:SHEET_ID,range:`${EXP_SHEET}!A:H`,
-        valueInputOption:"RAW",insertDataOption:"INSERT_ROWS",
-        resource:{values:[e2r(entry)]}
-      });
-      flash("✓ Saved to Sheet");
-    } catch{ flash("⚠ Save failed"); }
+      if (isEdit) {
+        // Delete old row then append updated row
+        const ri = await findExpRow(editingExp);
+        if (ri > 0) {
+          const m = await gapi.client.sheets.spreadsheets.get({spreadsheetId:SHEET_ID});
+          const sid = m.result.sheets.find(s=>s.properties.title===EXP_SHEET)?.properties.sheetId;
+          await gapi.client.sheets.spreadsheets.batchUpdate({
+            spreadsheetId:SHEET_ID,
+            resource:{requests:[{deleteDimension:{range:{sheetId:sid,dimension:"ROWS",startIndex:ri,endIndex:ri+1}}}]}
+          });
+        }
+        await gapi.client.sheets.spreadsheets.values.append({
+          spreadsheetId:SHEET_ID, range:`${EXP_SHEET}!A:H`,
+          valueInputOption:"RAW", insertDataOption:"INSERT_ROWS",
+          resource:{values:[e2r(entry)]}
+        });
+        flash("✓ Expense updated");
+      } else {
+        await gapi.client.sheets.spreadsheets.values.append({
+          spreadsheetId:SHEET_ID, range:`${EXP_SHEET}!A:H`,
+          valueInputOption:"RAW", insertDataOption:"INSERT_ROWS",
+          resource:{values:[e2r(entry)]}
+        });
+        flash("✓ Saved to Sheet");
+      }
+    } catch(err){ flash("⚠ Save failed: "+err.message); }
   };
 
   // ── Save income ───────────────────────────────────────────────────────────
@@ -830,7 +886,13 @@ function App() {
 
           {/* ── EXPENSE FORM ── */}
           {addMode==="expense"&&<>
-            <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:20,marginBottom:18}}>New Expense</div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:18}}>
+              <div style={{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:20}}>{editingExp?"Edit Expense":"New Expense"}</div>
+              {editingExp&&<button onClick={()=>{setEditingExp(null);setAmt("");setNte("");setDt(getNow());setIsSplit(false);setSplitN(2);setIsRefund(false);}}
+                style={{background:"#1A1A24",border:"1.5px solid #2A2A38",borderRadius:10,color:"#888",fontSize:12,padding:"6px 14px",cursor:"pointer"}}>
+                ✕ Cancel edit
+              </button>}
+            </div>
             <div style={{marginBottom:16}}>
               <div className="lbl">{isSplit&&splitN>1?`Amount (Full bill · your share: ${fmt(myAmt)})`:"Amount"}</div>
               <div style={{position:"relative"}}>
@@ -904,7 +966,9 @@ function App() {
               <div><div className="lbl">Note (optional)</div><input className="ti" placeholder="e.g. Dinner with friends" value={nte} onChange={e=>setNte(e.target.value)}/></div>
               <div><div className="lbl">Date</div><input className="di" type="date" value={dt} onChange={e=>setDt(e.target.value)}/></div>
             </div>
-            <button className={`sb ${saved?"ok":""}`} onClick={handleSaveExpense}>{saved?"✓ Saved!":"Save Expense"}</button>
+            <button className={`sb ${saved?"ok":""}`} onClick={handleSaveExpense}>
+              {saved?"✓ Saved!":editingExp?"Update Expense":"Save Expense"}
+            </button>
           </>}
 
           {/* ── INCOME FORM ── */}
@@ -957,11 +1021,18 @@ function App() {
                       <span style={{color:e.payment==="CC"?"#5A9BE8":"#5AE8A0"}}>{e.payment==="CC"?"💳":"💵"}</span>
                     </div>
                   </div>
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:e.amount<0?"#E85A5A":CATEGORIES[e.category]?.color}}>
+                  <div style={{display:"flex",alignItems:"center",gap:6,flexShrink:0}}>
+                    <div style={{fontSize:13,fontWeight:600,color:e.amount<0?"#E85A5A":cats[e.category]?.color,marginRight:4}}>
                       {e.amount<0?"↩ ":""}{fmt(Math.abs(e.amount))}
                     </div>
-                    <button onClick={()=>deleteExp(e)} style={{background:"none",border:"none",color:"#333",cursor:"pointer",fontSize:18,lineHeight:1,transition:"color .15s"}} onMouseEnter={ev=>ev.target.style.color="#E85A5A"} onMouseLeave={ev=>ev.target.style.color="#333"}>×</button>
+                    <button onClick={()=>startEdit(e)}
+                      style={{background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:7,color:"#888",cursor:"pointer",fontSize:13,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .15s"}}
+                      onMouseEnter={ev=>{ev.currentTarget.style.borderColor="#E8845A";ev.currentTarget.style.color="#E8845A";}}
+                      onMouseLeave={ev=>{ev.currentTarget.style.borderColor="#2A2A38";ev.currentTarget.style.color="#888";}}>✏</button>
+                    <button onClick={()=>{ if(window.confirm("Delete this expense?")) deleteExp(e); }}
+                      style={{background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:7,color:"#888",cursor:"pointer",fontSize:13,width:28,height:28,display:"flex",alignItems:"center",justifyContent:"center",transition:"all .15s"}}
+                      onMouseEnter={ev=>{ev.currentTarget.style.borderColor="#E85A5A";ev.currentTarget.style.color="#E85A5A";}}
+                      onMouseLeave={ev=>{ev.currentTarget.style.borderColor="#2A2A38";ev.currentTarget.style.color="#888";}}>🗑</button>
                   </div>
                 </div>
               ))}
@@ -1396,12 +1467,13 @@ function App() {
             <button onClick={async()=>{
               const now=new Date();
               const mk=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
-              const nc=new Set([...confirmedM]);nc.delete(mk);
+              const nc=new Set([...confirmedM]);
+              nc.delete(`confirmed:${mk}`); nc.delete(`skipped:${mk}`);
               setConfirmedM(nc);
               await window.storage.set("confirmed_months",JSON.stringify([...nc])).catch(()=>{});
               setModalItems(scheduled.map(s=>({...s,confirm:true,editAmt:s.amount})));
               setShowModal(true);
-              flash("Modal reset — re-confirming this month");
+              flash("Monthly payments reset — showing confirmation");
             }} style={{width:"100%",background:"#1A1A24",border:"1.5px solid #2A2A38",borderRadius:10,color:"#aaa",fontSize:13,fontWeight:500,padding:10,cursor:"pointer"}}>
               ↩ Re-confirm this month's payments
             </button>
@@ -1450,7 +1522,14 @@ function App() {
               </div>
             ))}
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:20}}>
-              <button onClick={()=>setShowModal(false)}
+              <button onClick={async()=>{
+                  const now=new Date();
+                  const mk=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
+                  const nc=new Set([...confirmedM,`skipped:${mk}`]);
+                  setConfirmedM(nc);
+                  await window.storage.set("confirmed_months",JSON.stringify([...nc])).catch(()=>{});
+                  setShowModal(false);
+                }}
                 style={{background:"#1A1A24",border:"1.5px solid #2A2A38",borderRadius:12,
                   color:"#888",fontSize:14,fontWeight:600,padding:14,cursor:"pointer"}}>
                 Skip this month
