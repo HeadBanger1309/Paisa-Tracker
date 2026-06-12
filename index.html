@@ -307,16 +307,40 @@ function App() {
       } catch {}
       setConfirmedM(confirmedSet);
       // Show modal only if this month is neither confirmed nor skipped
-      const isConfirmed = confirmedSet.has(`confirmed:${monthKey}`);
+      // Support both old key format (2026-06) and new format (confirmed:2026-06)
+      const isConfirmed = confirmedSet.has(`confirmed:${monthKey}`) || confirmedSet.has(monthKey);
       const isSkipped   = confirmedSet.has(`skipped:${monthKey}`);
+
       if (!isConfirmed && !isSkipped) {
         let sched = SCHEDULED_DEFAULTS;
         try {
           const stored = await window.storage.get("scheduled_payments");
           if (stored?.value) sched = JSON.parse(stored.value);
         } catch {}
-        setModalItems(sched.map(s => ({...s, confirm:true, editAmt:s.amount})));
-        setTimeout(()=>setShowModal(true), 900);
+
+        // Auto-confirm if all scheduled payments already exist in this month's expenses
+        // (handles case where user added them manually or already confirmed in a prior session)
+        const thisMonthExp = (re.result.values||[])
+          .map(r2e)
+          .filter(e => e.amount > 0 && e.date.startsWith(monthKey));
+
+        const alreadyAdded = sched.every(s =>
+          thisMonthExp.some(e =>
+            e.note === s.name &&
+            e.category === s.category &&
+            Math.abs(e.amount - s.amount) / Math.max(s.amount, 1) < 0.5
+          )
+        );
+
+        if (alreadyAdded) {
+          // All payments found — silently mark confirmed, skip modal
+          const nc = new Set([...confirmedSet, `confirmed:${monthKey}`]);
+          setConfirmedM(nc);
+          await window.storage.set("confirmed_months", JSON.stringify([...nc])).catch(()=>{});
+        } else {
+          setModalItems(sched.map(s => ({...s, confirm:true, editAmt:s.amount})));
+          setTimeout(()=>setShowModal(true), 900);
+        }
       }
     } catch(e){ flash("⚠ "+(e.result?.error?.message||e.message||"Load error")); }
     finally{ setSyncing(false); }
