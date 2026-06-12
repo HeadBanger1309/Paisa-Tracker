@@ -18,10 +18,54 @@ const { useState, useEffect, useMemo, useRef, useCallback } = React;
 const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip,
         ResponsiveContainer, LineChart, Line, CartesianGrid, ReferenceLine } = window.Recharts || {};
 
+// Sheet-backed storage — persists across devices via Google Sheets Preferences tab
+const sheetStore = {
+  _cache: {},
+  _ready: false,
+  async loadAll() {
+    try {
+      const r = await gapi.client.sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID, range: `${PREF_SHEET}!A:B`
+      });
+      const rows = r.result.values || [];
+      rows.slice(1).forEach(row => { if (row[0]) this._cache[row[0]] = row[1] || ""; });
+      this._ready = true;
+    } catch(e) { console.warn("sheetStore.loadAll:", e.message); }
+  },
+  async get(key) {
+    if (this._ready) return this._cache[key] !== undefined ? { value: this._cache[key] } : null;
+    return null;
+  },
+  async set(key, val) {
+    this._cache[key] = val;
+    if (!this._ready) return;
+    try {
+      const r = await gapi.client.sheets.spreadsheets.values.get({
+        spreadsheetId: SHEET_ID, range: `${PREF_SHEET}!A:A`
+      });
+      const rows = r.result.values || [];
+      const rowIdx = rows.findIndex(r => r[0] === key);
+      if (rowIdx > 0) {
+        await gapi.client.sheets.spreadsheets.values.update({
+          spreadsheetId: SHEET_ID, range: `${PREF_SHEET}!B${rowIdx + 1}`,
+          valueInputOption: "RAW", resource: { values: [[val]] }
+        });
+      } else {
+        await gapi.client.sheets.spreadsheets.values.append({
+          spreadsheetId: SHEET_ID, range: `${PREF_SHEET}!A:B`,
+          valueInputOption: "RAW", insertDataOption: "INSERT_ROWS",
+          resource: { values: [[key, val]] }
+        });
+      }
+    } catch(e) { console.warn("sheetStore.set:", e.message); }
+  }
+};
+
 const CLIENT_ID    = "198840607286-npt8da6voqh9bf5hqfvd2dnuespr9nph.apps.googleusercontent.com";
 const SHEET_ID     = "1L6Zl5PMZTKxWXNJoOmdc2vl_oY6e4Ur8EsNCN2SnQrk";
 const EXP_SHEET    = "Expenses";
 const INC_SHEET    = "Income";
+const PREF_SHEET   = "Preferences";
 const SCOPES       = "https://www.googleapis.com/auth/spreadsheets";
 const DISCOVERY    = "https://sheets.googleapis.com/$discovery/rest?version=v4";
 
@@ -263,12 +307,26 @@ function App() {
         resource:{values:[["Date","Type","Amount","Note"]]}
       });
     }
+    // Preferences sheet
+    const existsPref = meta.result.sheets.some(s=>s.properties.title===PREF_SHEET);
+    if (!existsPref) {
+      await gapi.client.sheets.spreadsheets.batchUpdate({
+        spreadsheetId:SHEET_ID,
+        resource:{requests:[{addSheet:{properties:{title:PREF_SHEET}}}]}
+      });
+      await gapi.client.sheets.spreadsheets.values.update({
+        spreadsheetId:SHEET_ID, range:`${PREF_SHEET}!A1:B1`, valueInputOption:"RAW",
+        resource:{values:[["Key","Value"]]}
+      });
+    }
   };
 
   const doLoad = useCallback(async()=>{
     setSyncing(true);
     try{
       await ensureSheets();
+      // Load all preferences from sheet into cache
+      await sheetStore.loadAll();
       const [re,ri] = await Promise.all([
         gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${EXP_SHEET}!A2:H`}),
         gapi.client.sheets.spreadsheets.values.get({spreadsheetId:SHEET_ID,range:`${INC_SHEET}!A2:D`})
@@ -281,7 +339,7 @@ function App() {
       const monthKey = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
       // Load custom subcategories
       try {
-        const stored = await window.storage.get("custom_cats");
+        const stored = await sheetStore.get("custom_cats");
         if (stored?.value) {
           const custom = JSON.parse(stored.value);
           const merged = JSON.parse(JSON.stringify(DEFAULT_CATEGORIES));
@@ -296,13 +354,13 @@ function App() {
       } catch {}
       // Load scheduled payments
       try {
-        const stored = await window.storage.get("scheduled_payments");
+        const stored = await sheetStore.get("scheduled_payments");
         if (stored?.value) setScheduled(JSON.parse(stored.value));
       } catch {}
       // Load confirmed/skipped months
       let confirmedSet = new Set();
       try {
-        const stored = await window.storage.get("confirmed_months");
+        const stored = await sheetStore.get("confirmed_months");
         if (stored?.value) confirmedSet = new Set(JSON.parse(stored.value));
       } catch {}
       setConfirmedM(confirmedSet);
@@ -314,7 +372,7 @@ function App() {
       if (!isConfirmed && !isSkipped) {
         let sched = SCHEDULED_DEFAULTS;
         try {
-          const stored = await window.storage.get("scheduled_payments");
+          const stored = await sheetStore.get("scheduled_payments");
           if (stored?.value) sched = JSON.parse(stored.value);
         } catch {}
 
@@ -336,7 +394,7 @@ function App() {
           // All payments found — silently mark confirmed, skip modal
           const nc = new Set([...confirmedSet, `confirmed:${monthKey}`]);
           setConfirmedM(nc);
-          await window.storage.set("confirmed_months", JSON.stringify([...nc])).catch(()=>{});
+          await sheetStore.set("confirmed_months", JSON.stringify([...nc])).catch(()=>{});
         } else {
           setModalItems(sched.map(s => ({...s, confirm:true, editAmt:s.amount})));
           setTimeout(()=>setShowModal(true), 900);
@@ -371,7 +429,7 @@ function App() {
       // Mark as confirmed for this month
       const newConfirmed = new Set([...confirmedM, `confirmed:${monthKey}`]);
       setConfirmedM(newConfirmed);
-      await window.storage.set("confirmed_months", JSON.stringify([...newConfirmed]));
+      await sheetStore.set("confirmed_months", JSON.stringify([...newConfirmed]));
       flash(`✓ ${toAdd.length} scheduled payments added`);
     } catch { flash("⚠ Could not save to sheet"); }
     setShowModal(false);
@@ -379,7 +437,7 @@ function App() {
 
   const saveScheduled = async (list) => {
     setScheduled(list);
-    await window.storage.set("scheduled_payments", JSON.stringify(list)).catch(()=>{});
+    await sheetStore.set("scheduled_payments", JSON.stringify(list)).catch(()=>{});
   };
 
   const addSubcategory = async (catName, subName) => {
@@ -396,7 +454,7 @@ function App() {
         const extras = info.sub.filter(s=>!defaults.includes(s));
         if (extras.length) custom[c] = extras;
       }
-      await window.storage.set("custom_cats", JSON.stringify(custom)).catch(()=>{});
+      await sheetStore.set("custom_cats", JSON.stringify(custom)).catch(()=>{});
     }
   };
 
@@ -1387,7 +1445,7 @@ function App() {
                               const extras=inf.sub.filter(x=>!defs.includes(x));
                               if(extras.length)custom[cat]=extras;
                             }
-                            await window.storage.set("custom_cats",JSON.stringify(custom)).catch(()=>{});
+                            await sheetStore.set("custom_cats",JSON.stringify(custom)).catch(()=>{});
                           }} style={{background:"none",border:"none",color:"#555",cursor:"pointer",fontSize:12,lineHeight:1,padding:0}}>×</button>}
                         </div>
                       );
@@ -1494,7 +1552,7 @@ function App() {
               const nc=new Set([...confirmedM]);
               nc.delete(`confirmed:${mk}`); nc.delete(`skipped:${mk}`);
               setConfirmedM(nc);
-              await window.storage.set("confirmed_months",JSON.stringify([...nc])).catch(()=>{});
+              await sheetStore.set("confirmed_months",JSON.stringify([...nc])).catch(()=>{});
               setModalItems(scheduled.map(s=>({...s,confirm:true,editAmt:s.amount})));
               setShowModal(true);
               flash("Monthly payments reset — showing confirmation");
@@ -1551,7 +1609,7 @@ function App() {
                   const mk=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}`;
                   const nc=new Set([...confirmedM,`skipped:${mk}`]);
                   setConfirmedM(nc);
-                  await window.storage.set("confirmed_months",JSON.stringify([...nc])).catch(()=>{});
+                  await sheetStore.set("confirmed_months",JSON.stringify([...nc])).catch(()=>{});
                   setShowModal(false);
                 }}
                 style={{background:"#1A1A24",border:"1.5px solid #2A2A38",borderRadius:12,
