@@ -624,10 +624,9 @@ function App() {
 
   // Cumulative savings over all time
   const cumulativeSavings=useMemo(()=>{
-    // Use savingsRate (all months) so cumulative total matches hero "Saved" figure
     let running=0;
-    return savingsRate.map(m=>{ running+=m.savings; return {...m,cumulative:running}; });
-  },[savingsRate]);
+    return savingsTrend.map(m=>{ running+=m.savings; return {...m,cumulative:running}; });
+  },[savingsTrend]);
 
   const daily=useMemo(()=>{
     const days=[];const now=new Date();
@@ -681,24 +680,12 @@ function App() {
   },[expenses,incomes,cats]);
 
   const savingsRate = useMemo(()=>{
-    // Build from ALL months present in data — not a fixed window
+    const now=new Date();
     const map={};
-    // Seed every month that has any income or expense data
-    for(const i of incomes){
-      const k=i.date.slice(0,7);
-      if(!map[k]){const d=new Date(k+"-01");map[k]={label:`${MN[d.getMonth()]} '${d.getFullYear().toString().slice(2)}`,inc:0,exp:0};}
-      map[k].inc+=i.amount;
-    }
-    for(const e of expenses){
-      const k=e.date.slice(0,7);
-      if(!map[k]){const d=new Date(k+"-01");map[k]={label:`${MN[d.getMonth()]} '${d.getFullYear().toString().slice(2)}`,inc:0,exp:0};}
-      if(e.amount>0) map[k].exp+=e.amount;
-    }
-    return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([,v])=>({
-      ...v,
-      rate: v.inc>0 ? Math.round((v.inc-v.exp)/v.inc*100) : 0,
-      savings: v.inc-v.exp
-    }));
+    for(let i=11;i>=0;i--){const d=new Date(now.getFullYear(),now.getMonth()-i,1);const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;map[k]={label:`${MN[d.getMonth()]} '${d.getFullYear().toString().slice(2)}`,inc:0,exp:0};}
+    for(const i of incomes){const k=i.date.slice(0,7);if(map[k])map[k].inc+=i.amount;}
+    for(const e of expenses){const k=e.date.slice(0,7);if(map[k]&&e.amount>0)map[k].exp+=e.amount;}
+    return Object.entries(map).sort((a,b)=>a[0].localeCompare(b[0])).map(([,v])=>({...v,rate:v.inc>0?Math.round((v.inc-v.exp)/v.inc*100):0,savings:v.inc-v.exp}));
   },[expenses,incomes]);
 
   const hist=useMemo(()=>{
@@ -907,11 +894,7 @@ function App() {
               <div style={{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:36,color:cumulativeSavings.length&&cumulativeSavings.at(-1).cumulative>=0?"#5AE8A0":"#E85A5A",letterSpacing:"-1px",marginTop:4}}>
                 {cumulativeSavings.length ? fmt(cumulativeSavings.at(-1).cumulative) : fmt(0)}
               </div>
-              {(()=>{
-                const sorted=savingsRate.filter(m=>m.inc>0||m.exp>0);
-                if(!sorted.length) return null;
-                return <div style={{fontSize:12,color:"#555",marginTop:6}}>{sorted[0].label} → present</div>;
-              })()}
+              <div style={{fontSize:12,color:"#555",marginTop:6}}>Jul 2024 → present</div>
             </div>
 
             {/* Monthly savings bar */}
@@ -1350,7 +1333,7 @@ function App() {
             <div className="card" style={{marginBottom:16}}>
               <div className="lbl">Monthly Savings Rate %</div>
               <ResponsiveContainer width="100%" height={160}>
-                <BarChart data={savingsRate.filter(m=>m.inc>0||m.exp>0)} barSize={12}>
+                <BarChart data={savingsRate.filter(m=>m.inc>0)} barSize={16}>
                   <XAxis dataKey="label" tick={{fill:"#888",fontSize:10}} tickLine={false} axisLine={false}/>
                   <YAxis hide/>
                   <ReferenceLine y={0} stroke="#333" strokeDasharray="3 3"/>
