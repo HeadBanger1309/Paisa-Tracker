@@ -264,6 +264,12 @@ const SCHEDULED_DEFAULTS = [{
   amount: 50000,
   payment: "Cash"
 }];
+const SCHEDULED_INCOME_DEFAULTS = [{
+  id: 101,
+  name: "Monthly Salary",
+  type: "Monthly Salary",
+  amount: 185686
+}];
 const fmt = n => "₹" + Number(n).toLocaleString("en-IN", {
   maximumFractionDigits: 0
 });
@@ -342,6 +348,11 @@ function App() {
   const [newSubFor, setNewSubFor] = useState("Transport");
   // New scheduled payment form
   const [showAddSched, setShowAddSched] = useState(false);
+  const [scheduledIncome, setScheduledIncome] = useState(SCHEDULED_INCOME_DEFAULTS);
+  const [modalIncItems, setModalIncItems] = useState([]);
+  const [showAddSchedInc, setShowAddSchedInc] = useState(false);
+  const [schedIncName, setSchedIncName] = useState("");
+  const [schedIncAmt, setSchedIncAmt] = useState("");
   const [schedName, setSchedName] = useState("");
   const [schedCat, setSchedCat] = useState("Food");
   const [schedSub, setSchedSub] = useState("Groceries");
@@ -569,6 +580,11 @@ function App() {
         const stored = await sheetStore.get("scheduled_payments");
         if (stored?.value) setScheduled(JSON.parse(stored.value));
       } catch {}
+      // Load scheduled income
+      try {
+        const stored = await sheetStore.get("scheduled_income");
+        if (stored?.value) setScheduledIncome(JSON.parse(stored.value));
+      } catch {}
       // Load confirmed/skipped months
       let confirmedSet = new Set();
       try {
@@ -628,6 +644,8 @@ function App() {
     const now = new Date();
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const date = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-01`;
+
+    // Expense entries
     const toAdd = modalItems.filter(i => i.confirm && i.editAmt > 0).map(i => ({
       id: Date.now() + Math.random(),
       date,
@@ -639,7 +657,17 @@ function App() {
       payment: i.payment,
       ccAmount: i.payment === "CC" ? Number(i.editAmt) : 0
     }));
+
+    // Income entries
+    const incToAdd = modalIncItems.filter(i => i.confirm && i.editAmt > 0).map(i => ({
+      id: "i" + Date.now() + Math.random(),
+      date,
+      type: i.type,
+      amount: Number(i.editAmt),
+      note: i.name
+    }));
     setExpenses(p => [...toAdd, ...p].sort((a, b) => b.date.localeCompare(a.date)));
+    setIncomes(p => [...incToAdd, ...p].sort((a, b) => b.date.localeCompare(a.date)));
     try {
       if (toAdd.length > 0) {
         await gapi.client.sheets.spreadsheets.values.append({
@@ -652,11 +680,21 @@ function App() {
           }
         });
       }
-      // Mark as confirmed for this month
+      if (incToAdd.length > 0) {
+        await gapi.client.sheets.spreadsheets.values.append({
+          spreadsheetId: SHEET_ID,
+          range: `${INC_SHEET}!A:D`,
+          valueInputOption: "RAW",
+          insertDataOption: "INSERT_ROWS",
+          resource: {
+            values: incToAdd.map(i2r)
+          }
+        });
+      }
       const newConfirmed = new Set([...confirmedM, `confirmed:${monthKey}`]);
       setConfirmedM(newConfirmed);
       await sheetStore.set("confirmed_months", JSON.stringify([...newConfirmed]));
-      flash(`✓ ${toAdd.length} scheduled payments added`);
+      flash(`✓ ${toAdd.length} payments + ${incToAdd.length} income added`);
     } catch {
       flash("⚠ Could not save to sheet");
     }
@@ -665,6 +703,10 @@ function App() {
   const saveScheduled = async list => {
     setScheduled(list);
     await sheetStore.set("scheduled_payments", JSON.stringify(list)).catch(() => {});
+  };
+  const saveScheduledIncome = async list => {
+    setScheduledIncome(list);
+    await sheetStore.set("scheduled_income", JSON.stringify(list)).catch(() => {});
   };
   const addSubcategory = async (catName, subName) => {
     if (!subName.trim() || !catName) return;
@@ -3740,6 +3782,11 @@ function App() {
         confirm: true,
         editAmt: s.amount
       })));
+      setModalIncItems(scheduledIncome.map(s => ({
+        ...s,
+        confirm: true,
+        editAmt: s.amount
+      })));
       setShowModal(true);
     },
     style: {
@@ -3755,6 +3802,168 @@ function App() {
       cursor: "pointer"
     }
   }, "\uD83D\uDCC5 Preview this month's confirmation")), /*#__PURE__*/React.createElement("div", {
+    className: "card",
+    style: {
+      marginBottom: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      justifyContent: "space-between",
+      alignItems: "center",
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "lbl",
+    style: {
+      marginBottom: 0
+    }
+  }, "Scheduled Income"), /*#__PURE__*/React.createElement("button", {
+    onClick: () => setShowAddSchedInc(p => !p),
+    style: {
+      background: "#5AE8A0",
+      border: "none",
+      borderRadius: 8,
+      color: "#0F0F13",
+      fontWeight: 700,
+      fontSize: 12,
+      padding: "5px 12px",
+      cursor: "pointer"
+    }
+  }, showAddSchedInc ? "Cancel" : "+ Add")), showAddSchedInc && /*#__PURE__*/React.createElement("div", {
+    style: {
+      background: "#1A1A24",
+      borderRadius: 12,
+      padding: "14px",
+      marginBottom: 14,
+      border: "1px solid #2A2A38"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 10
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "lbl"
+  }, "Name"), /*#__PURE__*/React.createElement("input", {
+    className: "ti",
+    placeholder: "e.g. Freelance Income",
+    value: schedIncName,
+    onChange: e => setSchedIncName(e.target.value)
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      marginBottom: 12
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    className: "lbl"
+  }, "Default Amount (\u20B9)"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "relative"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      position: "absolute",
+      left: 10,
+      top: "50%",
+      transform: "translateY(-50%)",
+      color: "#555",
+      fontSize: 14
+    }
+  }, "\u20B9"), /*#__PURE__*/React.createElement("input", {
+    className: "ti",
+    style: {
+      paddingLeft: 24
+    },
+    type: "number",
+    placeholder: "0",
+    value: schedIncAmt,
+    onChange: e => setSchedIncAmt(e.target.value)
+  }))), /*#__PURE__*/React.createElement("button", {
+    onClick: async () => {
+      if (!schedIncName.trim() || !schedIncAmt) return;
+      const newItem = {
+        id: Date.now(),
+        name: schedIncName.trim(),
+        type: "Monthly Salary",
+        amount: Number(schedIncAmt)
+      };
+      const updated = [...scheduledIncome, newItem];
+      await saveScheduledIncome(updated);
+      setSchedIncName("");
+      setSchedIncAmt("");
+      setShowAddSchedInc(false);
+      flash("✓ Scheduled income added");
+    },
+    style: {
+      width: "100%",
+      background: "#5AE8A0",
+      border: "none",
+      borderRadius: 10,
+      color: "#0F0F13",
+      fontWeight: 700,
+      fontSize: 14,
+      padding: 12,
+      cursor: "pointer"
+    }
+  }, "Save")), scheduledIncome.map((s, i) => /*#__PURE__*/React.createElement("div", {
+    key: s.id,
+    className: "er"
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      width: 34,
+      height: 34,
+      borderRadius: 10,
+      background: "rgba(90,232,160,.12)",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      fontSize: 16,
+      flexShrink: 0
+    }
+  }, "\uD83D\uDCB0"), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 500
+    }
+  }, s.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#555",
+      marginTop: 1
+    }
+  }, "Monthly \xB7 ", s.type)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 600,
+      color: "#5AE8A0"
+    }
+  }, fmt(s.amount)), /*#__PURE__*/React.createElement("button", {
+    onClick: async () => {
+      const updated = scheduledIncome.filter((_, j) => j !== i);
+      await saveScheduledIncome(updated);
+    },
+    style: {
+      background: "none",
+      border: "none",
+      color: "#333",
+      cursor: "pointer",
+      fontSize: 16,
+      transition: "color .15s"
+    },
+    onMouseEnter: ev => ev.target.style.color = "#E85A5A",
+    onMouseLeave: ev => ev.target.style.color = "#333"
+  }, "\xD7"))))), /*#__PURE__*/React.createElement("div", {
     className: "card"
   }, /*#__PURE__*/React.createElement("div", {
     className: "lbl",
@@ -3777,6 +3986,11 @@ function App() {
       setConfirmedM(nc);
       await sheetStore.set("confirmed_months", JSON.stringify([...nc])).catch(() => {});
       setModalItems(scheduled.map(s => ({
+        ...s,
+        confirm: true,
+        editAmt: s.amount
+      })));
+      setModalIncItems(scheduledIncome.map(s => ({
         ...s,
         confirm: true,
         editAmt: s.amount
@@ -3946,10 +4160,101 @@ function App() {
     }
   }, item.payment === "CC" ? "💳" : "💵")))), /*#__PURE__*/React.createElement("div", {
     style: {
+      margin: "20px 0 12px",
+      borderTop: "1px solid #2A2A35",
+      paddingTop: 16
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#5AE8A0",
+      letterSpacing: "1px",
+      textTransform: "uppercase",
+      marginBottom: 12
+    }
+  }, "\uD83D\uDCB0 Scheduled Income"), modalIncItems.map((item, i) => /*#__PURE__*/React.createElement("div", {
+    key: i,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+      padding: "10px 0",
+      borderBottom: "1px solid #1A1A24"
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    onClick: () => setModalIncItems(p => p.map((x, j) => j === i ? {
+      ...x,
+      confirm: !x.confirm
+    } : x)),
+    style: {
+      width: 24,
+      height: 24,
+      borderRadius: 6,
+      border: "1.5px solid",
+      borderColor: item.confirm ? "#5AE8A0" : "#333",
+      background: item.confirm ? "rgba(90,232,160,.15)" : "none",
+      cursor: "pointer",
+      display: "flex",
+      alignItems: "center",
+      justifyContent: "center",
+      color: "#5AE8A0",
+      fontSize: 14,
+      flexShrink: 0
+    }
+  }, item.confirm ? "✓" : ""), /*#__PURE__*/React.createElement("div", {
+    style: {
+      flex: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 13,
+      fontWeight: 500,
+      opacity: item.confirm ? 1 : .4
+    }
+  }, item.name), /*#__PURE__*/React.createElement("div", {
+    style: {
+      fontSize: 11,
+      color: "#555",
+      marginTop: 1
+    }
+  }, "Income \xB7 ", item.type)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      flexShrink: 0
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      fontSize: 13,
+      color: "#555"
+    }
+  }, "\u20B9"), /*#__PURE__*/React.createElement("input", {
+    type: "number",
+    value: item.editAmt,
+    onChange: e => setModalIncItems(p => p.map((x, j) => j === i ? {
+      ...x,
+      editAmt: e.target.value
+    } : x)),
+    style: {
+      background: "#1A1A24",
+      border: "1.5px solid #2A2A38",
+      borderRadius: 8,
+      color: item.confirm ? "#5AE8A0" : "#555",
+      fontSize: 14,
+      fontWeight: 600,
+      padding: "6px 10px",
+      width: 110,
+      outline: "none",
+      textAlign: "right"
+    }
+  }))))), /*#__PURE__*/React.createElement("div", {
+    style: {
       display: "grid",
       gridTemplateColumns: "1fr 1fr",
       gap: 10,
-      marginTop: 20
+      marginTop: 16
     }
   }, /*#__PURE__*/React.createElement("button", {
     onClick: async () => {
@@ -3983,7 +4288,7 @@ function App() {
       padding: 14,
       cursor: "pointer"
     }
-  }, "\u2713 Add ", modalItems.filter(i => i.confirm).length, " payments")))), /*#__PURE__*/React.createElement("div", {
+  }, "\u2713 Confirm ", modalItems.filter(i => i.confirm).length + modalIncItems.filter(i => i.confirm).length, " items")))), /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       bottom: 0,
