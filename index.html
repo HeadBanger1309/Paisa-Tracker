@@ -16,6 +16,18 @@
 window.onerror = function(msg, src, line, col, err) {
   document.getElementById('root').innerHTML =
     '<div style="color:#E85A5A;padding:20px;font-family:monospace;background:#0F0F13;min-height:100vh">' +
+    '<h2 style="color:#E8845A">Load Error</h2>' +
+    '<p><b>Message:</b> ' + msg + '</p>' +
+    '<p><b>Line:</b> ' + line + ', Col: ' + col + '</p>' +
+    '<pre style="color:#aaa;font-size:11px;overflow:auto">' + (err ? err.stack : '') + '</pre>' +
+    '</div>';
+  return true;
+};
+try {
+
+window.onerror = function(msg, src, line, col, err) {
+  document.getElementById('root').innerHTML =
+    '<div style="color:#E85A5A;padding:20px;font-family:monospace;background:#0F0F13;min-height:100vh">' +
     '<h2 style="color:#E8845A">💸 Load Error</h2>' +
     '<p><b>Message:</b> ' + msg + '</p>' +
     '<p><b>Line:</b> ' + line + ', Col: ' + col + '</p>' +
@@ -108,11 +120,61 @@ const sheetStore = {
   }
 };
 const CLIENT_ID = "198840607286-npt8da6voqh9bf5hqfvd2dnuespr9nph.apps.googleusercontent.com";
-const SHEET_ID = "1L6Zl5PMZTKxWXNJoOmdc2vl_oY6e4Ur8EsNCN2SnQrk";
+
+// ── Drive App Data helpers ─────────────────────────────────────────
+const APPDATA_FILE = "paisa-config.json";
+
+async function getDriveConfig() {
+  try {
+    const res = await gapi.client.request({
+      path: "https://www.googleapis.com/drive/v3/files",
+      params: { spaces: "appDataFolder", q: "name='" + APPDATA_FILE + "'", fields: "files(id,name)" }
+    });
+    const files = (res.result.files || []);
+    if (!files.length) return null;
+    const fileRes = await gapi.client.request({
+      path: "https://www.googleapis.com/drive/v3/files/" + files[0].id,
+      params: { alt: "media" }
+    });
+    return fileRes.result;
+  } catch(e) { console.warn("getDriveConfig:", e.message); return null; }
+}
+
+async function saveDriveConfig(config) {
+  try {
+    const res = await gapi.client.request({
+      path: "https://www.googleapis.com/drive/v3/files",
+      params: { spaces: "appDataFolder", q: "name='" + APPDATA_FILE + "'", fields: "files(id)" }
+    });
+    const files = (res.result.files || []);
+    const body = JSON.stringify(config);
+    const meta = JSON.stringify({ name: APPDATA_FILE, parents: ["appDataFolder"] });
+    const boundary = "paisa_boundary_xyz";
+    const multipart = "--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" + meta +
+      "\r\n--" + boundary + "\r\nContent-Type: application/json\r\n\r\n" + body + "\r\n--" + boundary + "--";
+    if (files.length) {
+      await gapi.client.request({
+        path: "https://www.googleapis.com/upload/drive/v3/files/" + files[0].id,
+        method: "PATCH", params: { uploadType: "media" },
+        headers: { "Content-Type": "application/json" }, body
+      });
+    } else {
+      await gapi.client.request({
+        path: "https://www.googleapis.com/upload/drive/v3/files",
+        method: "POST", params: { uploadType: "multipart" },
+        headers: { "Content-Type": "multipart/related; boundary=" + boundary },
+        body: multipart
+      });
+    }
+  } catch(e) { console.warn("saveDriveConfig:", e.message); }
+}
+
+const YOUR_DEFAULT_SHEET_ID = "1L6Zl5PMZTKxWXNJoOmdc2vl_oY6e4Ur8EsNCN2SnQrk";
+let SHEET_ID = YOUR_DEFAULT_SHEET_ID;
 const EXP_SHEET = "Expenses";
 const INC_SHEET = "Income";
 const PREF_SHEET = "Preferences";
-const SCOPES = "https://www.googleapis.com/auth/spreadsheets";
+const SCOPES = "https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.appdata";
 const DISCOVERY = "https://sheets.googleapis.com/$discovery/rest?version=v4";
 
 // Expenses: Date|Category|Subcategory|Amount|Note|Reconciled|Payment|CC Amount
@@ -329,6 +391,8 @@ function App() {
   const [cats, setCats] = useState(CATEGORIES);
   const [auth, setAuth] = useState("loading");
   const [authErr, setAuthErr] = useState("");
+  const [setupMode, setSetupMode] = useState(false);
+  const [pastedSheetId, setPastedSheetId] = useState("");
   const [gapiOk, setGapiOk] = useState(false);
   const [gisOk, setGisOk] = useState(false);
   const tokenRef = useRef(null);
@@ -428,8 +492,23 @@ function App() {
               setAuth("error");
               return;
             }
-            setAuth("ready");
-            await doLoad();
+            // Check Drive appdata for user's sheet ID
+            try {
+              const cfg = await getDriveConfig();
+              if (cfg && cfg.sheetId) {
+                SHEET_ID = cfg.sheetId;
+                setAuth("ready");
+                await doLoad();
+              } else {
+                // No sheet configured yet — show setup screen
+                setAuth("ready");
+                setSetupMode(true);
+              }
+            } catch(e) {
+              // Fallback: use default sheet (for original owner)
+              setAuth("ready");
+              await doLoad();
+            }
           }
         });
         setGisOk(true);
@@ -1307,6 +1386,58 @@ function App() {
       cursor: "pointer"
     }
   }, "\uD83D\uDD10 Sign in with Google"));
+
+
+  // ── Setup screen (new users without a connected Sheet) ──────────
+  if (auth === "ready" && setupMode) return /*#__PURE__*/React.createElement("div", {
+    style: {minHeight:"100vh",background:"#0F0F13",color:"#F0EDE6",
+      fontFamily:"'DM Sans',sans-serif",display:"flex",flexDirection:"column",
+      alignItems:"center",justifyContent:"center",padding:32,textAlign:"center"}
+  },
+    React.createElement("style", null, CSS),
+    React.createElement("div", {style:{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:26,letterSpacing:"-0.5px"}},
+      "\uD83D\uDCB8 Kaha gaya mera Paisa",
+      React.createElement("span", {style:{color:"#E8845A"}}, "!!")),
+    React.createElement("div", {style:{fontSize:11,color:"#555",letterSpacing:"1px",marginTop:4,marginBottom:32}}, "by Hardik Mall"),
+    React.createElement("div", {className:"card",style:{width:"100%",maxWidth:440,textAlign:"left",padding:24}},
+      React.createElement("div", {style:{fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:18,marginBottom:8}},
+        "Connect your Google Sheet"),
+      React.createElement("div", {style:{fontSize:13,color:"#888",marginBottom:16,lineHeight:1.7}},
+        "Your data lives in your own private Google Sheet. Quick setup:"),
+      React.createElement("ol", {style:{paddingLeft:20,color:"#777",fontSize:12,lineHeight:2.2,marginBottom:20}},
+        React.createElement("li", null,
+          "Go to ", React.createElement("a", {href:"https://sheets.google.com",target:"_blank",
+            style:{color:"#E8845A",textDecoration:"none"}}, "sheets.google.com"),
+          " and create a new blank sheet"),
+        React.createElement("li", null,
+          "Name it anything e.g. ", React.createElement("b", {style:{color:"#F0EDE6"}}, "my-paisa-tracker")),
+        React.createElement("li", null,
+          "Copy the Sheet ID from the URL — the long string between ",
+          React.createElement("code", {style:{color:"#F0EDE6",background:"#1A1A24",padding:"1px 6px",borderRadius:4}}, "/d/"),
+          " and ",
+          React.createElement("code", {style:{color:"#F0EDE6",background:"#1A1A24",padding:"1px 6px",borderRadius:4}}, "/edit")),
+        React.createElement("li", null, "Paste it below and tap Connect")
+      ),
+      React.createElement("div", {className:"lbl"}, "Your Sheet ID"),
+      React.createElement("input", {
+        className:"ti",
+        placeholder:"e.g. 1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms",
+        value:pastedSheetId,
+        onChange:function(e){setPastedSheetId(e.target.value);},
+        onKeyDown:function(e){if(e.key==="Enter")connectSheet(pastedSheetId);},
+        style:{marginBottom:16,fontSize:13}
+      }),
+      React.createElement("button", {
+        onClick:function(){connectSheet(pastedSheetId);},
+        style:{width:"100%",background:"#E8845A",border:"none",borderRadius:14,fontSize:15,
+          fontWeight:700,padding:14,cursor:"pointer",color:"#0F0F13",
+          fontFamily:"'Syne',sans-serif",letterSpacing:"0.3px"}
+      }, "\uD83D\uDD17 Connect Sheet"),
+      React.createElement("div", {style:{fontSize:11,color:"#444",marginTop:12,textAlign:"center"}},
+        "Your data stays 100% private in your own Google account")
+    )
+  );
+
 
   // ── Main App ──────────────────────────────────────────────────────────────
   return /*#__PURE__*/React.createElement("div", {
@@ -4364,6 +4495,15 @@ ReactDOM.createRoot(document.getElementById("root")).render(/*#__PURE__*/React.c
   document.getElementById('root').innerHTML =
     '<div style="color:#E85A5A;padding:20px;font-family:monospace;background:#0F0F13;min-height:100vh">' +
     '<h2 style="color:#E8845A">💸 Runtime Error</h2>' +
+    '<p>' + e.name + ': ' + e.message + '</p>' +
+    '<pre style="color:#aaa;font-size:11px;overflow:auto">' + e.stack + '</pre>' +
+    '</div>';
+}
+
+} catch(e) {
+  document.getElementById('root').innerHTML =
+    '<div style="color:#E85A5A;padding:20px;font-family:monospace;background:#0F0F13;min-height:100vh">' +
+    '<h2 style="color:#E8845A">Runtime Error</h2>' +
     '<p>' + e.name + ': ' + e.message + '</p>' +
     '<pre style="color:#aaa;font-size:11px;overflow:auto">' + e.stack + '</pre>' +
     '</div>';
