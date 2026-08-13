@@ -1252,7 +1252,7 @@ function App() {
   const hist = useMemo(() => {
     if (!srch) return expenses;
     const q = srch.toLowerCase();
-    return expenses.filter(e => e.note.toLowerCase().includes(q) || e.subcategory.toLowerCase().includes(q) || e.category.toLowerCase().includes(q));
+    return expenses.filter(e => e.note.toLowerCase().includes(q) || e.subcategory.toLowerCase().includes(q) || e.category.toLowerCase().includes(q) || String(e.amount).includes(q) || String(Math.abs(e.amount)).includes(q));
   }, [expenses, srch]);
   const rl = range === "month" ? (() => {
     const n = new Date();
@@ -2589,7 +2589,7 @@ function App() {
     }
   }, "\u21BB Refresh")), /*#__PURE__*/React.createElement("input", {
     className: "si",
-    placeholder: "Search note, category, subcategory\u2026",
+    placeholder: "Search note, category, subcategory, amount\u2026",
     value: srch,
     onChange: e => setSrch(e.target.value)
   }), hist.length === 0 ? /*#__PURE__*/React.createElement("div", {
@@ -2746,7 +2746,9 @@ function App() {
       ? ccExp.filter(e => e.note.toLowerCase().includes(reconSearch.toLowerCase()) ||
           e.subcategory.toLowerCase().includes(reconSearch.toLowerCase()) ||
           e.category.toLowerCase().includes(reconSearch.toLowerCase()) ||
-          e.date.includes(reconSearch))
+          e.date.includes(reconSearch) ||
+          String(e.amount).includes(reconSearch) ||
+          String(e.ccAmount).includes(reconSearch))
       : ccExp;
     const unv = ccFiltered.filter(e => !e.reconciled);
     const vd = ccFiltered.filter(e => e.reconciled);
@@ -2822,7 +2824,7 @@ function App() {
       }
     }, vd.length, " entries"))), /*#__PURE__*/React.createElement("input", {
       className: "si",
-      placeholder: "Search by note, category, date (YYYY-MM)...",
+      placeholder: "Search by note, category, amount, date (YYYY-MM)...",
       value: srch,
       onChange: function(e) { setSrch(e.target.value); },
       style: { marginBottom: 12 }
