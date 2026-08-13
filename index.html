@@ -828,6 +828,20 @@ function App() {
     setView("add");
     window.scrollTo(0, 0);
   };
+  const connectSheet = async sheetId => {
+    if (!sheetId || !sheetId.trim()) return;
+    const id = sheetId.trim();
+    SHEET_ID = id;
+    try {
+      await saveDriveConfig({ sheetId: id });
+      setSetupMode(false);
+      await doLoad();
+    } catch(e) {
+      console.error("connectSheet error:", e);
+      SHEET_ID = YOUR_DEFAULT_SHEET_ID;
+    }
+  };
+
   const handleSaveExpense = async () => {
     if (!amt || isNaN(amt) || fullAmt <= 0) return;
     const isEdit = !!editingExp;
