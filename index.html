@@ -393,6 +393,7 @@ function App() {
   const [authErr, setAuthErr] = useState("");
   const [setupMode, setSetupMode] = useState(false);
   const [pastedSheetId, setPastedSheetId] = useState("");
+  const [showGuide, setShowGuide] = useState(false);
   const [gapiOk, setGapiOk] = useState(false);
   const [gisOk, setGisOk] = useState(false);
   const tokenRef = useRef(null);
@@ -1402,7 +1403,208 @@ function App() {
   }, "\uD83D\uDD10 Sign in with Google"));
 
 
-  // ── Setup screen (new users without a connected Sheet) ──────────
+  
+
+  // ── Setup Guide Screen ────────────────────────────────────────
+  if (showGuide) return /*#__PURE__*/React.createElement("div", {
+    style:{minHeight:"100vh",background:"#0F0F13",color:"#F0EDE6",fontFamily:"'DM Sans',sans-serif",
+      padding:"0 0 40px"}
+  },
+    React.createElement("style", null, CSS),
+
+    // Header
+    React.createElement("div", {style:{padding:"24px 20px 16px",background:"#0F0F13",
+      position:"sticky",top:0,zIndex:10,borderBottom:"1px solid #1A1A24",
+      display:"flex",alignItems:"center",gap:12}},
+      React.createElement("button", {onClick:function(){setShowGuide(false);},
+        style:{background:"none",border:"none",color:"#888",fontSize:20,cursor:"pointer",
+          lineHeight:1,flexShrink:0}}, "\u2190"),
+      React.createElement("div", null,
+        React.createElement("div", {style:{fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:18}},
+          "\uD83D\uDCDA Setup Guide"),
+        React.createElement("div", {style:{fontSize:11,color:"#555",marginTop:2}},
+          "Complete guide to set up your own private tracker")
+      )
+    ),
+
+    React.createElement("div", {style:{maxWidth:520,margin:"0 auto",padding:"20px 20px 0"}},
+
+      // Step 1
+      React.createElement("div", {className:"card",style:{marginBottom:14}},
+        React.createElement("div", {style:{display:"flex",gap:12,alignItems:"flex-start"}},
+          React.createElement("div", {style:{width:28,height:28,borderRadius:"50%",background:"#E8845A",
+            color:"#0F0F13",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:14,
+            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}, "1"),
+          React.createElement("div", null,
+            React.createElement("div", {style:{fontFamily:"'Syne',sans-serif",fontWeight:700,
+              fontSize:15,marginBottom:6}}, "Create a Google Cloud project"),
+            React.createElement("ol", {style:{paddingLeft:18,color:"#888",fontSize:12,lineHeight:2.2,margin:0}},
+              React.createElement("li", null, "Go to ",
+                React.createElement("a", {href:"https://console.cloud.google.com",target:"_blank",
+                  style:{color:"#E8845A"}}, "console.cloud.google.com")),
+              React.createElement("li", null, "Click ", React.createElement("b", {style:{color:"#F0EDE6"}}, "New Project"),
+                " \u2192 name it anything (e.g. ", React.createElement("b", {style:{color:"#F0EDE6"}}, "paisa"), ")"),
+              React.createElement("li", null, "Click ", React.createElement("b", {style:{color:"#F0EDE6"}}, "Create"))
+            )
+          )
+        )
+      ),
+
+      // Step 2
+      React.createElement("div", {className:"card",style:{marginBottom:14}},
+        React.createElement("div", {style:{display:"flex",gap:12,alignItems:"flex-start"}},
+          React.createElement("div", {style:{width:28,height:28,borderRadius:"50%",background:"#E8845A",
+            color:"#0F0F13",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:14,
+            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}, "2"),
+          React.createElement("div", null,
+            React.createElement("div", {style:{fontFamily:"'Syne',sans-serif",fontWeight:700,
+              fontSize:15,marginBottom:6}}, "Enable the required APIs"),
+            React.createElement("ol", {style:{paddingLeft:18,color:"#888",fontSize:12,lineHeight:2.2,margin:0}},
+              React.createElement("li", null, "In your project, go to ",
+                React.createElement("b", {style:{color:"#F0EDE6"}}, "APIs & Services \u2192 Enable APIs & Services")),
+              React.createElement("li", null, "Search for ", React.createElement("b", {style:{color:"#F0EDE6"}}, "Google Sheets API"),
+                " \u2192 click it \u2192 ", React.createElement("b", {style:{color:"#F0EDE6"}}, "Enable")),
+              React.createElement("li", null, "Go back, search for ", React.createElement("b", {style:{color:"#F0EDE6"}}, "Google Drive API"),
+                " \u2192 ", React.createElement("b", {style:{color:"#F0EDE6"}}, "Enable"))
+            )
+          )
+        )
+      ),
+
+      // Step 3
+      React.createElement("div", {className:"card",style:{marginBottom:14}},
+        React.createElement("div", {style:{display:"flex",gap:12,alignItems:"flex-start"}},
+          React.createElement("div", {style:{width:28,height:28,borderRadius:"50%",background:"#E8845A",
+            color:"#0F0F13",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:14,
+            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}, "3"),
+          React.createElement("div", null,
+            React.createElement("div", {style:{fontFamily:"'Syne',sans-serif",fontWeight:700,
+              fontSize:15,marginBottom:6}}, "Configure OAuth consent screen"),
+            React.createElement("ol", {style:{paddingLeft:18,color:"#888",fontSize:12,lineHeight:2.2,margin:0}},
+              React.createElement("li", null, "Go to ", React.createElement("b", {style:{color:"#F0EDE6"}}, "APIs & Services \u2192 OAuth consent screen")),
+              React.createElement("li", null, "User type: ", React.createElement("b", {style:{color:"#F0EDE6"}}, "External"), " \u2192 Create"),
+              React.createElement("li", null, "App name: anything (e.g. ", React.createElement("b", {style:{color:"#F0EDE6"}}, "My Paisa Tracker"), ")"),
+              React.createElement("li", null, "Fill in your email for support & developer contact \u2192 Save"),
+              React.createElement("li", null, "Scopes: click ", React.createElement("b", {style:{color:"#F0EDE6"}}, "Add or remove scopes"),
+                " \u2192 add ", React.createElement("code", {style:{color:"#F0EDE6",background:"#1A1A24",
+                  padding:"1px 5px",borderRadius:4,fontSize:11}}, ".../auth/spreadsheets"),
+                " and ", React.createElement("code", {style:{color:"#F0EDE6",background:"#1A1A24",
+                  padding:"1px 5px",borderRadius:4,fontSize:11}}, ".../auth/drive.appdata")),
+              React.createElement("li", null, "Test users: ", React.createElement("b", {style:{color:"#F0EDE6"}}, "+ Add users"),
+                " \u2192 add your Gmail and any friends' Gmails \u2192 Save")
+            )
+          )
+        )
+      ),
+
+      // Step 4
+      React.createElement("div", {className:"card",style:{marginBottom:14}},
+        React.createElement("div", {style:{display:"flex",gap:12,alignItems:"flex-start"}},
+          React.createElement("div", {style:{width:28,height:28,borderRadius:"50%",background:"#E8845A",
+            color:"#0F0F13",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:14,
+            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}, "4"),
+          React.createElement("div", null,
+            React.createElement("div", {style:{fontFamily:"'Syne',sans-serif",fontWeight:700,
+              fontSize:15,marginBottom:6}}, "Create OAuth credentials"),
+            React.createElement("ol", {style:{paddingLeft:18,color:"#888",fontSize:12,lineHeight:2.2,margin:0}},
+              React.createElement("li", null, "Go to ", React.createElement("b", {style:{color:"#F0EDE6"}}, "APIs & Services \u2192 Credentials")),
+              React.createElement("li", null, "Click ", React.createElement("b", {style:{color:"#F0EDE6"}}, "+ Create Credentials \u2192 OAuth client ID")),
+              React.createElement("li", null, "Application type: ", React.createElement("b", {style:{color:"#F0EDE6"}}, "Web application")),
+              React.createElement("li", null, "Authorised JavaScript origins: add your GitHub Pages URL",
+                React.createElement("br", null),
+                React.createElement("code", {style:{color:"#888",fontSize:11}}, "https://YOUR-USERNAME.github.io")),
+              React.createElement("li", null, "Click ", React.createElement("b", {style:{color:"#F0EDE6"}}, "Create"),
+                " \u2192 copy your ", React.createElement("b", {style:{color:"#F0EDE6"}}, "Client ID"))
+            )
+          )
+        )
+      ),
+
+      // Step 5
+      React.createElement("div", {className:"card",style:{marginBottom:14}},
+        React.createElement("div", {style:{display:"flex",gap:12,alignItems:"flex-start"}},
+          React.createElement("div", {style:{width:28,height:28,borderRadius:"50%",background:"#E8845A",
+            color:"#0F0F13",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:14,
+            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}, "5"),
+          React.createElement("div", null,
+            React.createElement("div", {style:{fontFamily:"'Syne',sans-serif",fontWeight:700,
+              fontSize:15,marginBottom:6}}, "Deploy to GitHub Pages"),
+            React.createElement("ol", {style:{paddingLeft:18,color:"#888",fontSize:12,lineHeight:2.2,margin:0}},
+              React.createElement("li", null, "Go to ", React.createElement("a", {href:"https://github.com",
+                target:"_blank",style:{color:"#E8845A"}}, "github.com"),
+                " \u2192 create a free account"),
+              React.createElement("li", null, "New repository \u2192 name it anything (e.g. ", React.createElement("b", {style:{color:"#F0EDE6"}}, "paisa"),
+                ") \u2192 Public \u2192 Create"),
+              React.createElement("li", null, "Download the ", React.createElement("b", {style:{color:"#F0EDE6"}}, "index.html"),
+                " from the person who shared this with you"),
+              React.createElement("li", null, "Open it in a text editor, find ", React.createElement("code", {style:{color:"#F0EDE6",
+                background:"#1A1A24",padding:"1px 5px",borderRadius:4,fontSize:11}}, "CLIENT_ID"),
+                " near the top and replace it with your own Client ID from Step 4"),
+              React.createElement("li", null, "Upload the edited ", React.createElement("b", {style:{color:"#F0EDE6"}}, "index.html"),
+                " to your GitHub repo \u2192 Add file \u2192 Upload files"),
+              React.createElement("li", null, "Go to ", React.createElement("b", {style:{color:"#F0EDE6"}}, "Settings \u2192 Pages"),
+                " \u2192 Source: Deploy from branch \u2192 main \u2192 Save"),
+              React.createElement("li", null, "Your tracker is live at ",
+                React.createElement("code", {style:{color:"#E8845A",fontSize:11}},
+                  "https://YOUR-USERNAME.github.io/paisa"))
+            )
+          )
+        )
+      ),
+
+      // Step 6
+      React.createElement("div", {className:"card",style:{marginBottom:14}},
+        React.createElement("div", {style:{display:"flex",gap:12,alignItems:"flex-start"}},
+          React.createElement("div", {style:{width:28,height:28,borderRadius:"50%",background:"#5AE8A0",
+            color:"#0F0F13",fontFamily:"'Syne',sans-serif",fontWeight:800,fontSize:14,
+            display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0}}, "6"),
+          React.createElement("div", null,
+            React.createElement("div", {style:{fontFamily:"'Syne',sans-serif",fontWeight:700,
+              fontSize:15,marginBottom:6}}, "Connect your Google Sheet"),
+            React.createElement("ol", {style:{paddingLeft:18,color:"#888",fontSize:12,lineHeight:2.2,margin:0}},
+              React.createElement("li", null, "Open your tracker URL in a browser"),
+              React.createElement("li", null, "Sign in with Google \u2192 the setup screen will appear"),
+              React.createElement("li", null, "Go to ", React.createElement("a", {href:"https://sheets.google.com",
+                target:"_blank",style:{color:"#E8845A"}}, "sheets.google.com"),
+                " \u2192 create a new blank sheet"),
+              React.createElement("li", null, "Copy the Sheet ID from the URL \u2014 the long string between ",
+                React.createElement("code", {style:{color:"#F0EDE6",background:"#1A1A24",
+                  padding:"1px 5px",borderRadius:4,fontSize:11}}, "/d/"),
+                " and ", React.createElement("code", {style:{color:"#F0EDE6",background:"#1A1A24",
+                  padding:"1px 5px",borderRadius:4,fontSize:11}}, "/edit")),
+              React.createElement("li", null, "Paste it in the setup screen \u2192 tap ",
+                React.createElement("b", {style:{color:"#F0EDE6"}}, "Connect Sheet")),
+              React.createElement("li", null, React.createElement("b", {style:{color:"#5AE8A0"}},
+                "Done! \uD83C\uDF89"), " Your tracker is ready to use")
+            )
+          )
+        )
+      ),
+
+      // Tips box
+      React.createElement("div", {style:{background:"rgba(232,132,90,.08)",border:"1px solid rgba(232,132,90,.2)",
+        borderRadius:14,padding:"14px 16px",marginBottom:20}},
+        React.createElement("div", {style:{fontSize:12,color:"#E8845A",fontWeight:600,marginBottom:8}},
+          "\uD83D\uDCA1 Tips"),
+        React.createElement("ul", {style:{paddingLeft:16,color:"#888",fontSize:12,lineHeight:2,margin:0}},
+          React.createElement("li", null, "Each person needs their own Google Cloud project and Client ID"),
+          React.createElement("li", null, "Each person gets their own private Google Sheet \u2014 no data is shared"),
+          React.createElement("li", null, "The app works on any browser \u2014 bookmark it on your phone"),
+          React.createElement("li", null, "Google Cloud is free for this usage \u2014 you won't be charged"),
+          React.createElement("li", null, "If sign-in fails, make sure your Gmail is added as a Test User in Step 3")
+        )
+      ),
+
+      React.createElement("button", {
+        onClick: function(){setShowGuide(false);},
+        style:{width:"100%",background:"#E8845A",border:"none",borderRadius:14,
+          color:"#0F0F13",fontFamily:"'Syne',sans-serif",fontWeight:700,fontSize:15,
+          padding:16,cursor:"pointer"}
+      }, "Got it \u2014 take me back")
+    )
+  );
+
+// ── Setup screen (new users without a connected Sheet) ──────────
   if (auth === "ready" && setupMode) return /*#__PURE__*/React.createElement("div", {
     style: {minHeight:"100vh",background:"#0F0F13",color:"#F0EDE6",
       fontFamily:"'DM Sans',sans-serif",display:"flex",flexDirection:"column",
@@ -1448,7 +1650,7 @@ function App() {
           fontFamily:"'Syne',sans-serif",letterSpacing:"0.3px"}
       }, "\uD83D\uDD17 Connect Sheet"),
       React.createElement("div", {style:{fontSize:11,color:"#444",marginTop:12,textAlign:"center"}},
-        "Your data stays 100% private in your own Google account")
+        "Your data stays 100% private in your own Google account"), /*#__PURE__*/React.createElement("div", {style:{marginTop:16,textAlign:"center"}}, /*#__PURE__*/React.createElement("button", {onClick:function(){setShowGuide(true);}, style:{background:"none",border:"none",color:"#E8845A",fontSize:12,cursor:"pointer",textDecoration:"underline"}}, "\uD83D\uDCDA View full setup guide"))
     )
   );
 
@@ -4170,7 +4372,19 @@ function App() {
       padding: 10,
       cursor: "pointer"
     }
-  }, "\u21A9 Re-confirm this month's payments")))), showModal && /*#__PURE__*/React.createElement("div", {
+  }, "\u21A9 Re-confirm this month's payments")), /*#__PURE__*/React.createElement("div", {
+      className: "card",
+      style: {marginBottom: 16}
+    },
+      /*#__PURE__*/React.createElement("div", {className:"lbl", style:{marginBottom:8}}, "Setup Guide"),
+      /*#__PURE__*/React.createElement("div", {style:{fontSize:12,color:"#555",marginBottom:12}},
+        "Share this guide with anyone who wants to use their own tracker"),
+      /*#__PURE__*/React.createElement("button", {
+        onClick: function(){setShowGuide(true);},
+        style:{width:"100%",background:"#1A1A24",border:"1.5px solid #E8845A",borderRadius:10,
+          color:"#E8845A",fontSize:13,fontWeight:600,padding:10,cursor:"pointer"}
+      }, "\uD83D\uDCDA Open Setup Guide")
+    ))), showModal && /*#__PURE__*/React.createElement("div", {
     style: {
       position: "fixed",
       inset: 0,
