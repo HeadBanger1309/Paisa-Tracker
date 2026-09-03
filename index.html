@@ -427,6 +427,7 @@ function App() {
   const [range, setRange] = useState("month");
   const [tab, setTab] = useState("overview");
   const [srch, setSrch] = useState("");
+  const [histTab, setHistTab] = useState("expenses");
   const [anlCat, setAnlCat] = useState(null); // selected category for drill-down
   const [anlView, setAnlView] = useState("trends"); // "trends"|"drilldown"|"savings" 
 
@@ -2789,7 +2790,60 @@ function App() {
       padding: "7px 14px",
       cursor: "pointer"
     }
-  }, "\u21BB Refresh")), /*#__PURE__*/React.createElement("input", {
+  }, "\u21BB Refresh")), /*#__PURE__*/React.createElement("div", {
+    style: {display:"flex",gap:4,marginBottom:14,background:"#13131A",borderRadius:24,padding:4}
+  },
+    /*#__PURE__*/React.createElement("button", {
+      className: "tab " + (histTab === "expenses" ? "on" : ""),
+      style: {flex:1,textAlign:"center"},
+      onClick: function(){setHistTab("expenses");}
+    }, "\uD83D\uDCB8 Expenses"),
+    /*#__PURE__*/React.createElement("button", {
+      className: "tab " + (histTab === "income" ? "on" : ""),
+      style: {flex:1,textAlign:"center"},
+      onClick: function(){setHistTab("income");}
+    }, "\uD83D\uDCB0 Income")
+  ),
+  histTab === "income" ? /*#__PURE__*/React.createElement(React.Fragment, null,
+    incomes.length === 0
+      ? /*#__PURE__*/React.createElement("div", {className:"card",style:{textAlign:"center",padding:40,color:"#555"}},
+          /*#__PURE__*/React.createElement("div", {style:{fontSize:32,marginBottom:8}}, "\uD83D\uDCED"),
+          "No income entries yet"
+        )
+      : /*#__PURE__*/React.createElement("div", {className:"card"},
+          (srch
+            ? incomes.filter(function(i){
+                var q = srch.toLowerCase();
+                return i.note.toLowerCase().includes(q) ||
+                  i.type.toLowerCase().includes(q) ||
+                  String(i.amount).includes(q) ||
+                  i.date.includes(q);
+              })
+            : incomes
+          ).map(function(inc, idx) {
+            return /*#__PURE__*/React.createElement("div", {
+              key: inc.id,
+              className: "er"
+            },
+              /*#__PURE__*/React.createElement("div", {
+                style:{width:34,height:34,borderRadius:10,background:"rgba(90,232,160,.12)",
+                  display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}
+              }, "\uD83D\uDCB0"),
+              /*#__PURE__*/React.createElement("div", {style:{flex:1,minWidth:0}},
+                /*#__PURE__*/React.createElement("div", {
+                  style:{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}
+                }, inc.type, inc.note ? " \xB7 " + inc.note : ""),
+                /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:"#555",marginTop:2}},
+                  inc.date)
+              ),
+              /*#__PURE__*/React.createElement("div", {
+                style:{fontSize:13,fontWeight:600,color:"#5AE8A0",flexShrink:0}
+              }, "+" + (typeof fmt === "function" ? fmt(inc.amount) : "\u20B9" + inc.amount))
+            );
+          })
+        )
+  ) : /*#__PURE__*/React.createElement("div", null,
+  /*#__PURE__*/React.createElement("input", {
     className: "si",
     placeholder: "Search note, category, subcategory, amount\u2026",
     value: srch,
@@ -2941,7 +2995,8 @@ function App() {
       fontSize: 12,
       color: "#555"
     }
-  }, "Showing 80 of ", hist.length, " \u2014 use search to narrow"))), view === "reconcile" && (() => {
+  }, "Showing 80 of ", hist.length, " \u2014 use search to narrow")
+  ))), view === "reconcile" && (() => {
     const ccExp = expenses.filter(e => e.payment === "CC" || !e.payment);
     const reconSearch = srch;
     const ccFiltered = reconSearch
