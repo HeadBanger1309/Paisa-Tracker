@@ -450,6 +450,7 @@ function App() {
   const [incNote, setIncNote] = useState("");
   const [incDt, setIncDt] = useState(getNow());
   const [incSaved, setIncSaved] = useState(false);
+  const [editingInc, setEditingInc] = useState(null);
   useEffect(() => {
     setSub(CATEGORIES[cat].sub[0]);
   }, [cat]);
@@ -830,6 +831,33 @@ function App() {
     setView("add");
     window.scrollTo(0, 0);
   };
+  
+  const findIncRow = async inc => {
+    const r = await gapi.client.sheets.spreadsheets.values.get({ spreadsheetId: SHEET_ID, range: `${INC_SHEET}!A:D` });
+    return (r.result.values||[]).findIndex(row => row[0]===inc.date && row[1]===inc.type && parseFloat(row[2])===inc.amount && row[3]===inc.note);
+  };
+
+  const deleteIncome = async inc => {
+    setIncomes(p => p.filter(x => x.id !== inc.id));
+    try {
+      const ri = await findIncRow(inc);
+      if (ri > 0) {
+        const m = await gapi.client.sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+        const sid = m.result.sheets.find(s => s.properties.title === INC_SHEET)?.properties.sheetId;
+        await gapi.client.sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID,
+          resource: { requests: [{ deleteDimension: { range: { sheetId: sid, dimension: "ROWS", startIndex: ri, endIndex: ri+1 }}}]}});
+      }
+      flash("\u2713 Income deleted");
+    } catch { flash("\u26A0 Delete failed"); }
+  };
+
+  const startEditIncome = inc => {
+    setIncType(inc.type); setIncAmt(String(inc.amount));
+    setIncNote(inc.note); setIncDt(inc.date);
+    setEditingInc(inc); setAddMode("income");
+    setView("add"); window.scrollTo(0, 0);
+  };
+
   const connectSheet = async sheetId => {
     if (!sheetId || !sheetId.trim()) return;
     const id = sheetId.trim();
@@ -928,33 +956,30 @@ function App() {
   const handleSaveIncome = async () => {
     const a = parseFloat(incAmt);
     if (!a || a <= 0) return;
-    const entry = {
-      id: "i" + Date.now(),
-      date: incDt,
-      type: incType,
-      amount: a,
-      note: incNote.trim()
-    };
-    setIncomes(p => [entry, ...p].sort((a, b) => b.date.localeCompare(a.date)));
-    setIncAmt("");
-    setIncNote("");
-    setIncDt(getNow());
-    setIncSaved(true);
-    setTimeout(() => setIncSaved(false), 1200);
+    const isEdit = !!editingInc;
+    const entry = { id: isEdit ? editingInc.id : "i"+Date.now(), date:incDt, type:incType, amount:a, note:incNote.trim() };
+    if (isEdit) { setIncomes(p => p.map(x => x.id===editingInc.id?entry:x).sort((a,b)=>b.date.localeCompare(a.date))); }
+    else { setIncomes(p => [entry,...p].sort((a,b)=>b.date.localeCompare(a.date))); }
+    setIncAmt(""); setIncNote(""); setIncDt(getNow()); setEditingInc(null);
+    setIncSaved(true); setTimeout(()=>setIncSaved(false), 1200);
     try {
-      await gapi.client.sheets.spreadsheets.values.append({
-        spreadsheetId: SHEET_ID,
-        range: `${INC_SHEET}!A:D`,
-        valueInputOption: "RAW",
-        insertDataOption: "INSERT_ROWS",
-        resource: {
-          values: [i2r(entry)]
+      if (isEdit) {
+        const ri = await findIncRow(editingInc);
+        if (ri > 0) {
+          const m = await gapi.client.sheets.spreadsheets.get({ spreadsheetId: SHEET_ID });
+          const sid = m.result.sheets.find(s=>s.properties.title===INC_SHEET)?.properties.sheetId;
+          await gapi.client.sheets.spreadsheets.batchUpdate({ spreadsheetId: SHEET_ID,
+            resource:{requests:[{deleteDimension:{range:{sheetId:sid,dimension:"ROWS",startIndex:ri,endIndex:ri+1}}}]}});
         }
-      });
-      flash("✓ Income saved");
-    } catch {
-      flash("⚠ Save failed");
-    }
+        await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId:SHEET_ID, range:`${INC_SHEET}!A:D`,
+          valueInputOption:"RAW", insertDataOption:"INSERT_ROWS", resource:{values:[i2r(entry)]} });
+        flash("\u2713 Income updated");
+      } else {
+        await gapi.client.sheets.spreadsheets.values.append({ spreadsheetId:SHEET_ID, range:`${INC_SHEET}!A:D`,
+          valueInputOption:"RAW", insertDataOption:"INSERT_ROWS", resource:{values:[i2r(entry)]} });
+        flash("\u2713 Income saved");
+      }
+    } catch { flash("\u26A0 Save failed"); }
   };
   const findExpRow = async e => {
     const r = await gapi.client.sheets.spreadsheets.values.get({
@@ -2691,7 +2716,7 @@ function App() {
       fontSize: 20,
       marginBottom: 18
     }
-  }, "Add Income"), /*#__PURE__*/React.createElement("div", {
+  }, editingInc ? "Edit Income" : "Add Income"), /*#__PURE__*/React.createElement("div", {
     style: {
       marginBottom: 16
     }
@@ -2805,6 +2830,13 @@ function App() {
     }, "\uD83D\uDCB0 Income")
   ),
   histTab === "income" ? /*#__PURE__*/React.createElement(React.Fragment, null,
+    /*#__PURE__*/React.createElement("input", {
+      className: "si",
+      placeholder: "Search type, note, amount, date...",
+      value: srch,
+      onChange: function(e){ setSrch(e.target.value); },
+      style: {marginBottom:12}
+    }),
     incomes.length === 0
       ? /*#__PURE__*/React.createElement("div", {className:"card",style:{textAlign:"center",padding:40,color:"#555"}},
           /*#__PURE__*/React.createElement("div", {style:{fontSize:32,marginBottom:8}}, "\uD83D\uDCED"),
@@ -2820,11 +2852,8 @@ function App() {
                   i.date.includes(q);
               })
             : incomes
-          ).map(function(inc, idx) {
-            return /*#__PURE__*/React.createElement("div", {
-              key: inc.id,
-              className: "er"
-            },
+          ).map(function(inc, ix) {
+            return /*#__PURE__*/React.createElement("div", {key: inc.id, className: "er"},
               /*#__PURE__*/React.createElement("div", {
                 style:{width:34,height:34,borderRadius:10,background:"rgba(90,232,160,.12)",
                   display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,flexShrink:0}
@@ -2832,13 +2861,30 @@ function App() {
               /*#__PURE__*/React.createElement("div", {style:{flex:1,minWidth:0}},
                 /*#__PURE__*/React.createElement("div", {
                   style:{fontSize:13,fontWeight:500,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}
-                }, inc.type, inc.note ? " \xB7 " + inc.note : ""),
+                }, inc.note || inc.type),
                 /*#__PURE__*/React.createElement("div", {style:{fontSize:11,color:"#555",marginTop:2}},
-                  inc.date)
+                  inc.type, " \xB7 ", inc.date)
               ),
-              /*#__PURE__*/React.createElement("div", {
-                style:{fontSize:13,fontWeight:600,color:"#5AE8A0",flexShrink:0}
-              }, "+" + (typeof fmt === "function" ? fmt(inc.amount) : "\u20B9" + inc.amount))
+              /*#__PURE__*/React.createElement("div", {style:{display:"flex",alignItems:"center",gap:6,flexShrink:0}},
+                /*#__PURE__*/React.createElement("div", {style:{fontSize:13,fontWeight:600,color:"#5AE8A0"}},
+                  "+" + fmt(inc.amount)),
+                /*#__PURE__*/React.createElement("button", {
+                  onClick: function(){ startEditIncome(inc); },
+                  style:{background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:7,color:"#888",
+                    cursor:"pointer",fontSize:13,width:28,height:28,display:"flex",alignItems:"center",
+                    justifyContent:"center",transition:"all .15s"},
+                  onMouseEnter: function(ev){ ev.currentTarget.style.borderColor="#E8845A"; ev.currentTarget.style.color="#E8845A"; },
+                  onMouseLeave: function(ev){ ev.currentTarget.style.borderColor="#2A2A38"; ev.currentTarget.style.color="#888"; }
+                }, "\u270F"),
+                /*#__PURE__*/React.createElement("button", {
+                  onClick: function(){ if(window.confirm("Delete this income entry?")) deleteIncome(inc); },
+                  style:{background:"#1A1A24",border:"1px solid #2A2A38",borderRadius:7,color:"#888",
+                    cursor:"pointer",fontSize:13,width:28,height:28,display:"flex",alignItems:"center",
+                    justifyContent:"center",transition:"all .15s"},
+                  onMouseEnter: function(ev){ ev.currentTarget.style.borderColor="#E85A5A"; ev.currentTarget.style.color="#E85A5A"; },
+                  onMouseLeave: function(ev){ ev.currentTarget.style.borderColor="#2A2A38"; ev.currentTarget.style.color="#888"; }
+                }, "\uD83D\uDDD1")
+              )
             );
           })
         )
